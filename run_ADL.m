@@ -20,6 +20,9 @@
 % OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 % SOFTWARE.
 
+% I denotes the number of input
+% data denotes the data in the form [features labels]
+
 clc
 clear
 close all
