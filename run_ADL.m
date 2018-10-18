@@ -39,3 +39,6 @@ clear data
 disp(performance)
 
 % The classification rate in each chunk can be seen in parameter.cr
+% I is the number of input
+% the data are constructed as follows data = [features labels]
+% the labels are encoded to 1-0
