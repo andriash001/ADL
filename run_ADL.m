@@ -39,4 +39,3 @@ clear data
 disp(performance)
 
 % The classification rate in each chunk can be seen in parameter.cr
-% The results are the average of all timestamps
