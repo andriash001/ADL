@@ -233,12 +233,12 @@ for t = 1:nFolds
             
             %% initiate NN weight parameters
             [ii,~] = size(parameter.nn.W{layer-1});
-            parameter.nn.W {layer} = (rand(1,ii+1) - 0.5) * 2 * 4 * sqrt(6 / (M + ii));
+            parameter.nn.W {layer} = normrnd(0,sqrt(2/(ii+1)),[1,ii+1]);      
             parameter.nn.vW{layer} = zeros(1,ii+1);
             parameter.nn.dW{layer} = zeros(1,ii+1);
             
             %% initiate new classifier weight
-            parameter.nn.Ws {layer} = (rand(M,2) - 0.5) * 2 * 4 * sqrt(6 / (M + 2));
+            parameter.nn.Ws {layer} = normrnd(0,1,[M,2]);     
             parameter.nn.vWs{layer} = zeros(M,2);
             parameter.nn.dWs{layer} = zeros(M,2);
             
@@ -370,6 +370,25 @@ hold off
 
 end
 
+function y = netffhl(nn,x)
+n = nn.n - 1;
+m = size(x,1);
+x = [ones(m,1) x];      % by adding 1 to the first coulomn, it means the first coulomn of W is bias
+nn.a{1} = x;            % the first activity is the input itself
+
+%% feedforward from input layer through all the hidden layer
+for i = 2 : n-1
+    switch nn.activation_function
+        case 'sigm'
+            nn.a{i} = sigmf(nn.a{i - 1} * nn.W{i - 1}',[1,0]);
+        case 'relu'
+            nn.a{i} = max(nn.a{i - 1} * nn.W{i - 1}',0);
+    end
+    nn.a{i} = [ones(m,1) nn.a{i}];
+end
+y = nn.a{i};
+end
+
 function nn = nettestparallel(nn, x, T, ev)
 %% feedforward
 nn = netfeedforward(nn, x, T);
@@ -377,12 +396,13 @@ nn = netfeedforward(nn, x, T);
 
 %% obtain trueclass label
 [~,act] = max(T,[],2);
-
-%% obtain the class label
 nn.sigma = zeros(m1,m2);
+
 for t = 1 : m1
     for i = 1 : nn.hl
         if nn.beta(i) ~= 0
+            %% obtain the predicted label
+            % note that the layer weight betaOld is fixed
             nn.sigma(t,:) = nn.sigma(t,:) + nn.as{i}(t,:)*nn.betaOld(i);
             [~, nn.classlabel{i}(t,:)] = max(nn.as{i}(t,:),[],2);
             compare = act(t,:) - nn.classlabel{i}(t,:);
@@ -518,6 +538,8 @@ kk    = randperm(N);
 x     = [ones(N,1) x(kk,:)];
 y     = y(kk,:);
 
+%% xavier initialization
+n_in = parameter.ev{ly-1}.K;
 
 %% main loop, train the model
 for k = 1 : N
@@ -597,10 +619,10 @@ for k = 1 : N
             K = K + 1;
             fprintf('The new node no %d is FORMED around sample %d\n', K, k)
             node(kp)  = K;
-            net.W{1}  = [net.W{1};(rand(1,bb) - 0.5)*2*4*sqrt(6/(1 + bb))];
+            net.W{1}  = [net.W{1};normrnd(0,sqrt(2/(n_in+1)),[1,bb])];
             net.vW{1} = [net.vW{1};zeros(1,bb)];
             net.dW{1} = [net.dW{1};zeros(1,bb)];
-            net.W{2}  = [net.W{2} rand(parameter.nn.size(end),1)];
+            net.W{2}  = [net.W{2} normrnd(0,sqrt(2/(K+1)),[parameter.nn.size(end),1])];
             net.vW{2} = [net.vW{2} zeros(parameter.nn.size(end),1)];
             net.dW{2} = [net.dW{2} zeros(parameter.nn.size(end),1)];
         else
@@ -663,11 +685,13 @@ end
 
 %% substitute the weight back to main model
 parameter.nn.W{ly}   = net.W{1};
-parameter.nn.vW{ly}  = net.vW{1};
-parameter.nn.dW{ly}  = net.dW{1};
 parameter.nn.Ws{ly}  = net.W{2};
-parameter.nn.vWs{ly} = net.vW{2};
-parameter.nn.dWs{ly} = net.dW{2};
+
+%% reset momentum and gradient
+parameter.nn.vW{ly}  = net.vW{1}*0;
+parameter.nn.dW{ly}  = net.dW{1}*0;
+parameter.nn.vWs{ly} = net.vW{2}*0;
+parameter.nn.dWs{ly} = net.dW{2}*0;
 
 %% substitute the recursive calculation
 parameter.ev{ly}.kl          = kl;
@@ -727,6 +751,13 @@ x = parameter.nn.a{ly};
 kk = randperm(N);
 x = x(kk,:);
 y = y(kk,:);
+
+%% xavier initialization
+if ly > 1
+    n_in = parameter.ev{ly-1}.K;
+else
+    n_in = parameter.nn.size(1);
+end
 
 %% main loop, train the model
 for k = 1 : N
@@ -806,15 +837,15 @@ for k = 1 : N
         K = K + 1;
         fprintf('The new node no %d is FORMED around sample %d\n', K, k)
         node(kp)  = K;
-        net.W{1}  = [net.W{1};(rand(1,bb) - 0.5)*2*4*sqrt(6/(1 + bb))];
+        net.W{1}  = [net.W{1};normrnd(0,sqrt(2/(n_in+1)),[1,bb])];
         net.vW{1} = [net.vW{1};zeros(1,bb)];
         net.dW{1} = [net.dW{1};zeros(1,bb)];
-        net.W{2}  = [net.W{2} rand(parameter.nn.size(end),1)];
+        net.W{2}  = [net.W{2} normrnd(0,sqrt(2/(K+1)),[parameter.nn.size(end),1])];
         net.vW{2} = [net.vW{2} zeros(parameter.nn.size(end),1)];
         net.dW{2} = [net.dW{2} zeros(parameter.nn.size(end),1)];
         if ly < parameter.nn.hl
             [wNext,~]             = size(parameter.nn.W{ly+1});
-            parameter.nn.W{ly+1}  = [parameter.nn.W{ly+1} (rand(wNext,1) - 0.5)*2*4*sqrt(6/(wNext + 1))];
+            parameter.nn.W{ly+1}  = [parameter.nn.W{ly+1} normrnd(0,sqrt(2/(K+1)),[wNext,1])];
             parameter.nn.vW{ly+1} = [parameter.nn.vW{ly+1} zeros(wNext,1)];
             parameter.nn.dW{ly+1} = [parameter.nn.dW{ly+1} zeros(wNext,1)];
         end
@@ -883,11 +914,13 @@ end
 
 %% substitute the weight back to main model
 parameter.nn.W{ly}   = net.W{1};
-parameter.nn.vW{ly}  = net.vW{1};
-parameter.nn.dW{ly}  = net.dW{1};
 parameter.nn.Ws{ly}  = net.W{2};
-parameter.nn.vWs{ly} = net.vW{2};
-parameter.nn.dWs{ly} = net.dW{2};
+
+%% reset momentum and gradient
+parameter.nn.vW{ly}  = net.vW{1}*0;
+parameter.nn.dW{ly}  = net.dW{1}*0;
+parameter.nn.vWs{ly} = net.vW{2}*0;
+parameter.nn.dWs{ly} = net.dW{2}*0;
 
 %% substitute the recursive calculation
 parameter.ev{1}.kp           = kp;
@@ -992,8 +1025,12 @@ for i = 1 : (nn.n - 1)
         nn.vW{i} = nn.momentum*nn.vW{i} + dW;
         dW = nn.vW{i};
     end
+    %% update
     nn.W{i} = nn.W{i} - dW;
 end
+%% reset momentum and gradient
+nn.dW{i} = nn.dW{i}*0;
+nn.vW{i} = nn.vW{i}*0;
 end
 
 function [miu,std,var] = meanstditer(miu_old,var_old,x,k)
@@ -1018,16 +1055,16 @@ nn.output               = 'softmax';       %  output layer 'sigm' (=logistic), '
 
 %% initiate weights and weight momentum for hidden layer
 for i = 2 : nn.n - 1
-    nn.W {i - 1} = (rand(nn.size(i), nn.size(i - 1)+1) - 0.5) * 2 * 3 * sqrt(5 / (nn.size(i) + nn.size(i - 1)));
+    nn.W {i - 1} = normrnd(0,sqrt(2/(nn.size(i-1)+1)),[nn.size(i),nn.size(i - 1)+1]);
     nn.vW{i - 1} = zeros(size(nn.W{i - 1}));
     nn.dW{i - 1} = zeros(size(nn.W{i - 1}));
-    nn.c{i - 1} = rand(nn.size(i - 1),1);
+    nn.c{i - 1} = normrnd(0,sqrt(2/(nn.size(i-1)+1)),[nn.size(i - 1),1]);
 end
 
 %% initiate weights and weight momentum for output layer
 if nn.outputConnect == 1
     for i = 1 : nn.hl
-        nn.Ws {i} = (rand(nn.size(end), nn.size(i + 1)+1) - 0.5) * 2 * 3 * sqrt(5 / (nn.size(end) + nn.size(i + 1)));
+        nn.Ws {i} = normrnd(0,sqrt(2/(size(nn.W{i},1)+1)),[nn.size(end),nn.size(i+1)+1]);
         nn.vWs{i} = zeros(size(nn.Ws{i}));
         nn.dWs{i} = zeros(size(nn.Ws{i}));
         nn.beta(i) = 1;
@@ -1035,7 +1072,7 @@ if nn.outputConnect == 1
         nn.p(i) = 1;
     end
 else
-    nn.Ws  = (rand(nn.size(end), nn.size(end - 1)+1) - 0.5) * 2 * 3 * sqrt(5 / (nn.size(end) + nn.size(end - 1)));
+    nn.Ws  = normrnd(0,sqrt(2/(size(nn.W {i - 1},1)+1)),[nn.size(end),nn.size(end - 1)+1]);
     nn.vWs = zeros(size(nn.Ws));
     nn.dWs = zeros(size(nn.Ws));
 end
