@@ -20,6 +20,7 @@
 % OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 % SOFTWARE.
 
+%% main code
 function [parameter,performance] = ADL(data,I)
 %% divide the data into nFolds chunks
 fprintf('=========Parallel Autonomous Deep Learning is started=========\n')
@@ -70,6 +71,7 @@ parameter.ev{1}.miu_x_old   = 0;
 parameter.ev{1}.var_x_old   = 0;
 parameter.ev{1}.kl          = 0;
 parameter.ev{1}.K           = K;
+parameter.ev{1}.cr          = 0;
 parameter.ev{1}.node        = [];
 parameter.ev{1}.BIAS2       = [];
 parameter.ev{1}.VAR         = [];
@@ -83,9 +85,9 @@ parameter.ev{1}.stdmin_NS   = [];
 parameter.ev{1}.stdmin_NHS  = [];
 
 %% initiate drift detection parameter
-alpha_w = 0.0005;
-alpha_d = 0.0001;
-alpha   = 0.0001;
+alpha_w = 0.005;
+alpha_d = 0.001;
+alpha   = 0.001;
 
 %% initiate layer merging iterative parameters
 for k3=1:M
@@ -111,13 +113,14 @@ for t = 1:nFolds
     fprintf('=========Chunk %d of %d=========\n', t, size(Data,2))
     disp('Discriminative Testing: running ...');
     parameter.nn.t = t;
-    parameter.nn = nettestparallel(parameter.nn,x,T,parameter.ev);
+    [parameter.nn] = nettestparallel(parameter.nn,x,T,parameter.ev);
     
     %% metrics calculation
     parameter.Loss(t) = parameter.nn.L(parameter.nn.index);
     tTest(bd*t+(1-bd):bd*t,:) = parameter.nn.sigma;
     act(bd*t+(1-bd):bd*t,:) = parameter.nn.act;
     out(bd*t+(1-bd):bd*t,:) = parameter.nn.out;
+    parameter.residual_error(bd*t+(1-bd):bd*t,:) = parameter.nn.residual_error;
     parameter.cr(t) = parameter.nn.cr;
     ClassificationRate(t) = mean(parameter.cr);
     fprintf('Classification rate %d\n', ClassificationRate(t))
@@ -125,7 +128,7 @@ for t = 1:nFolds
     
     %% statistical measure
     [performance.ev.f_measure(t,:),performance.ev.g_mean(t,:),performance.ev.recall(t,:),performance.ev.precision(t,:),performance.ev.err(t,:)] = stats(parameter.nn.act, parameter.nn.out, M);
-    if t == nFolds - 1
+    if t == nFolds
         fprintf('=========Parallel Autonomous Deep Learning is finished=========\n')
         break               % last chunk only testing
     end
@@ -154,7 +157,7 @@ for t = 1:nFolds
                     MCI = zeros(1,M);
                     for o = 1:M
                         pearson = covariance(end - l,hh,o)/sqrt(covariance(end - l,end - l,o)*covariance(hh,hh,o));
-                        MCI(o)  = (0.5*(covariance(hh,hh,o) +   covariance(end - l,end - l,o)) - sqrt((covariance(hh,hh,o) + covariance(end - l,end - l,o))^(2) - 4*covariance(end - l,end - l,o)*covariance(hh,hh,o)*(1 - pearson^(2))));
+                        MCI(o)  = (0.5*(covariance(hh,hh,o) + covariance(end - l,end - l,o)) - sqrt((covariance(hh,hh,o) + covariance(end - l,end - l,o))^(2) - 4*covariance(end - l,end - l,o)*covariance(hh,hh,o)*(1 - pearson^(2))));
                     end
                     if max(abs(MCI)) < threshold
                         if isempty(merged_list)
@@ -251,6 +254,7 @@ for t = 1:nFolds
             parameter.ev{layer}.layer       = layer;
             parameter.ev{layer}.kl          = 0;
             parameter.ev{layer}.K           = 1;
+            parameter.ev{layer}.cr          = 0;
             parameter.ev{layer}.node        = [];
             parameter.ev{layer}.miu_NS_old  = 0;
             parameter.ev{layer}.var_NS_old  = 0;
@@ -363,13 +367,14 @@ ylabel('No of Layer')
 xlim([1 nFolds]);
 xlabel('chunk');
 hold off
-% figure
-% plotconfusion(tTarget(2:end,:)',tTest(2:end,:)');
+figure
+plotconfusion(tTarget(2:end,:)',tTest(2:end,:)');
 
 %% display the results
 
 end
 
+%% feedforward operation
 function y = netffhl(nn,x)
 n = nn.n - 1;
 m = size(x,1);
@@ -389,52 +394,66 @@ end
 y = nn.a{i};
 end
 
-function nn = nettestparallel(nn, x, T, ev)
+%% testing phase
+function [nn] = nettestparallel(nn, x, T, ev)
 %% feedforward
 nn = netfeedforward(nn, x, T);
 [m1,m2] = size(T);
 
 %% obtain trueclass label
 [~,act] = max(T,[],2);
-nn.sigma = zeros(m1,m2);
 
-for t = 1 : m1
-    for i = 1 : nn.hl
-        if nn.beta(i) ~= 0
-            %% obtain the predicted label
-            % note that the layer weight betaOld is fixed
-            nn.sigma(t,:) = nn.sigma(t,:) + nn.as{i}(t,:)*nn.betaOld(i);
-            [~, nn.classlabel{i}(t,:)] = max(nn.as{i}(t,:),[],2);
-            compare = act(t,:) - nn.classlabel{i}(t,:);
-            
-            %% train the weighted voting
-            if compare ~= 0
-                nn.beta(i) = max(nn.beta(i)*nn.p(i),0);
-                nn.p(i) = max(nn.p(i)-0.01,0);
-            elseif compare == 0
-                nn.beta(i) = min(nn.beta(i)*(1+nn.p(i)),1);
-                nn.p(i) = min(nn.p(i)+0.01,1);
-            end
-        end
-        
-        if t == m1
-            %% calculate the number of parameter
+if numel(nn.betaOld) > 1
+    nn.sigma = zeros(m1,m2);
+    for t = 1 : m1
+        for i = 1 : nn.hl
             if nn.beta(i) ~= 0
-                [c,d] = size(nn.Ws{i});
-                vw = 1;
-            else
-                c = 0;
-                d = 0;
-                vw = 0;
+                %% obtain the predicted label
+                % note that the layer weight betaOld is fixed
+                nn.sigma(t,:) = nn.sigma(t,:) + nn.as{i}(t,:)*nn.betaOld(i);
+                [~, nn.classlabel{i}(t,:)] = max(nn.as{i}(t,:),[],2);
+                compare = act(t,:) - nn.classlabel{i}(t,:);
+                
+                %% train the weighted voting
+                if compare ~= 0
+                    nn.beta(i) = max(nn.beta(i)*nn.p(i),0);
+                    nn.p(i) = max(nn.p(i)-0.01,0);
+                elseif compare == 0
+                    nn.beta(i) = min(nn.beta(i)*(1+nn.p(i)),1);
+                    nn.p(i) = min(nn.p(i)+0.01,1);
+%                     ev{i}.cr = ev{i}.cr + 1;
+                end
             end
-            [a,b] = size(nn.W{i});
-            nop(i) = a*b + c*d + vw;
             
-            %% calculate the number of node in each hidden layer
-            nn.nodes{i}(nn.t) = ev{i}.K;
+            if t == m1
+                %% calculate the number of parameter
+                if nn.beta(i) ~= 0
+                    [c,d] = size(nn.Ws{i});
+                    vw = 1;
+                else
+                    c = 0;
+                    d = 0;
+                    vw = 0;
+                end
+                [a,b] = size(nn.W{i});
+                nop(i) = a*b + c*d + vw;
+                
+                %% calculate the number of node in each hidden layer
+                nn.nodes{i}(nn.t) = ev{i}.K;
+            end
         end
+        nn.beta = nn.beta/sum(nn.beta);
     end
-    nn.beta = nn.beta/sum(nn.beta);
+elseif numel(nn.betaOld) == 1
+    nn.sigma = nn.as{1};
+%     [~, nn.classlabel{1}] = max(nn.as{1},[],2);
+%     nn.bad = find(nn.classlabel{1} ~= act);
+%     ev{1}.cr = 1 - numel(nn.bad)/m1;
+    [c,d] = size(nn.Ws{1});
+    vw = 1;
+    [a,b] = size(nn.W{1});
+    nop = a*b + c*d + vw;
+    nn.nodes{1}(nn.t) = ev{1}.K;
 end
 nn.nop(nn.t) = sum(nop);
 nn.mnop = [mean(nn.nop) std(nn.nop)];
@@ -444,13 +463,15 @@ nn.betaOld = nn.beta;
 [~,nn.index] = max(nn.beta);
 
 %% calculate classification rate
-[~,out] = max(nn.sigma,[],2);
+[raw_out,out] = max(nn.sigma,[],2);
 nn.bad = find(out ~= act);
 nn.cr = 1 - numel(nn.bad)/m1;
+nn.residual_error = 1 - raw_out;
 nn.out = out;
 nn.act = act;
 end
 
+%% feedforward operation
 function nn = netfeedforward(nn, x, y)
 n = nn.n;
 m = size(x,1);
@@ -478,7 +499,7 @@ for i = 1 : nn.hl
                 nn.as{i} = nn.a{i + 1} * nn.Ws{i}';
             case 'softmax'
                 nn.as{i} = nn.a{i + 1} * nn.Ws{i}';
-                nn.as{i} = exp( nn.as{i} - max(nn.as{i},[],2));
+                nn.as{i} = exp(nn.as{i} - max(nn.as{i},[],2));
                 nn.as{i} = nn.as{i}./sum(nn.as{i}, 2);
         end
         
@@ -488,7 +509,7 @@ for i = 1 : nn.hl
         %% calculate loss function
         switch nn.output
             case {'sigm', 'linear'}
-                nn.L(i) = 1/2 * sum(sum(nn.e .^ 2)) / m;
+                nn.L(i) = 1/2 * sum(sum(nn.e{i} .^ 2)) / m;
             case 'softmax'
                 nn.L(i) = -sum(sum(y .* log(nn.as{i}))) / m;
         end
@@ -496,6 +517,7 @@ for i = 1 : nn.hl
 end
 end
 
+%% train the newly created layer
 function parameter  = nettrainsingle(parameter,x,y)
 [~,bb] = size(parameter.nn.W{parameter.nn.hl});
 grow = 0;
@@ -545,10 +567,7 @@ n_in = parameter.ev{ly-1}.K;
 for k = 1 : N
     kp = kp + 1;
     kl = kl + 1;
-    
-    %% feedforward #1
-    net = netffsingle(net, x(k,:), y(k,:));
-    
+        
     %% Incremental calculation of x_tail mean and variance
     if k <= size(parameter.nn.a{1},1)
         [miu_x,std_x,var_x] = meanstditer(miu_x_old,var_x_old,parameter.nn.a{1}(k,:),kp);
@@ -570,7 +589,7 @@ for k = 1 : N
         end
         Ey = py;
         Ez = net.W{2}*Ey;
-        Ez = exp(Ez);
+        Ez = exp(Ez - max(Ez));
         Ez = Ez./sum(Ez);
         if parameter.nn.hl > 1
             py = Ey2;
@@ -585,16 +604,17 @@ for k = 1 : N
             Ey2 = py;
         end
         Ez2 = net.W{2}*Ey2;
-        Ez2 = exp(Ez2);
+        Ez2 = exp(Ez2 - max(Ez2));
         Ez2 = Ez2./sum(Ez2);
         
         %% Network mean calculation
         bias2 = (Ez - y(k,:)').^2;
         ns = bias2;
+%         NS = mean(ns);
         NS = norm(ns,'fro');
         
         %% Incremental calculation of NS mean and variance
-        [miu_NS,std_NS,var_NS] = meanstditer(miu_NS_old,var_NS_old,NS,kp);
+        [miu_NS,std_NS,var_NS] = meanstditer(miu_NS_old,var_NS_old,NS,kl);
         miu_NS_old = miu_NS;
         var_NS_old = var_NS;
         miustd_NS = miu_NS + std_NS;
@@ -632,10 +652,11 @@ for k = 1 : N
         
         %% Network variance calculation
         var = Ez2 - Ez.^2;
+%         NHS = mean(var);
         NHS = norm(var,'fro');
         
         %% Incremental calculation of NHS mean and variance
-        [miu_NHS,std_NHS,var_NHS] = meanstditer(miu_NHS_old,var_NHS_old,NHS,kp);
+        [miu_NHS,std_NHS,var_NHS] = meanstditer(miu_NHS_old,var_NHS_old,NHS,kl);
         miu_NHS_old = miu_NHS;
         var_NHS_old = var_NHS;
         miustd_NHS = miu_NHS + std_NHS;
@@ -673,9 +694,8 @@ for k = 1 : N
             prune = 0;
         end
         
-        if grow == 1 || prune == 1
-            net = netffsingle(net, x(k,:), y(k,:));
-        end
+        %% feedforward
+        net = netffsingle(net, x(k,:), y(k,:));
     end
     
     %% feedforward #2, executed if there is a hidden node changing
@@ -709,6 +729,7 @@ parameter.ev{ly}.stdmin_NS   = stdmin_NS;
 parameter.ev{ly}.stdmin_NHS  = stdmin_NHS;
 end
 
+%% train the winning layer
 function parameter  = nettrainparallel(parameter,y)
 [~,bb] = size(parameter.nn.W{parameter.nn.index});
 grow = 0;
@@ -763,10 +784,7 @@ end
 for k = 1 : N
     kp = kp + 1;
     kl = kl + 1;
-    
-    %% feedforward #1
-    net = netffsingle(net, x(k,:), y(k,:));
-    
+        
     %% Incremental calculation of x_tail mean and variance
     [miu_x,std_x,var_x] = meanstditer(miu_x_old,var_x_old,parameter.nn.a{1}(k,:),kp);
     miu_x_old = miu_x;
@@ -787,7 +805,7 @@ for k = 1 : N
     end
     Ey = py;
     Ez = net.W{2}*Ey;
-    Ez = exp(Ez);
+    Ez = exp(Ez - max(Ez));
     Ez = Ez./sum(Ez);
     if parameter.nn.hl > 1
         py = Ey2;
@@ -802,16 +820,17 @@ for k = 1 : N
         Ey2 = py;
     end
     Ez2 = net.W{2}*Ey2;
-    Ez2 = exp(Ez2);
+    Ez2 = exp(Ez2 - max(Ez2));
     Ez2 = Ez2./sum(Ez2);
     
     %% Network mean calculation
     bias2 = (Ez - y(k,:)').^2;
     ns = bias2;
+%     NS = mean(ns);
     NS = norm(ns,'fro');
     
     %% Incremental calculation of NS mean and variance
-    [miu_NS,std_NS,var_NS] = meanstditer(miu_NS_old,var_NS_old,NS,kp);
+    [miu_NS,std_NS,var_NS] = meanstditer(miu_NS_old,var_NS_old,NS,kl);
     miu_NS_old = miu_NS;
     var_NS_old = var_NS;
     miustd_NS  = miu_NS + std_NS;
@@ -856,10 +875,11 @@ for k = 1 : N
     
     %% Network variance calculation
     var = Ez2 - Ez.^2;
+%     NHS = mean(var);
     NHS = norm(var,'fro');
     
     %% Incremental calculation of NHS mean and variance
-    [miu_NHS,std_NHS,var_NHS] = meanstditer(miu_NHS_old,var_NHS_old,NHS,kp);
+    [miu_NHS,std_NHS,var_NHS] = meanstditer(miu_NHS_old,var_NHS_old,NHS,kl);
     miu_NHS_old = miu_NHS;
     var_NHS_old = var_NHS;
     miustd_NHS  = miu_NHS + std_NHS;
@@ -903,9 +923,8 @@ for k = 1 : N
         prune = 0;
     end
     
-    if grow == 1 || prune == 1
-        net = netffsingle(net, x(k,:), y(k,:));
-    end
+    %% feedforward
+    net = netffsingle(net, x(k,:), y(k,:));
     
     %% feedforward #2, executed if there is a hidden node changing
     net = netbackpropagation(net);
@@ -941,6 +960,7 @@ parameter.ev{ly}.stdmin_NS   = stdmin_NS;
 parameter.ev{ly}.stdmin_NHS  = stdmin_NHS;
 end
 
+%% feedforward for a single layer network
 function nn = netffsingle(nn, x, y)
 n = nn.n;
 m = size(x,1);
@@ -971,16 +991,9 @@ end
 
 %% calculate error
 nn.e = y - nn.a{n};
-
-%% calculate loss function
-switch nn.output
-    case {'sigm', 'linear'}
-        nn.L = 1/2 * sum(sum(nn.e .^ 2)) / m;
-    case 'softmax'
-        nn.L = -sum(sum(y .* log(nn.a{n}))) / m;
-end
 end
 
+%% calculate backpropagation
 function nn = netbackpropagation(nn)
 n = nn.n;
 switch nn.output
@@ -1017,6 +1030,7 @@ for i = 1 : (n - 1)
 end
 end
 
+%% update the weight
 function nn = netupdate(nn)
 for i = 1 : (nn.n - 1)
     dW = nn.dW{i};
@@ -1027,22 +1041,23 @@ for i = 1 : (nn.n - 1)
     end
     %% update
     nn.W{i} = nn.W{i} - dW;
+    
 end
-%% reset momentum and gradient
-nn.dW{i} = nn.dW{i}*0;
-nn.vW{i} = nn.vW{i}*0;
 end
 
+%% calculate recursive mean and standard deviation
 function [miu,std,var] = meanstditer(miu_old,var_old,x,k)
 miu = miu_old + (x - miu_old)./k;
 var = var_old + (x - miu_old).*(x - miu);
 std = sqrt(var/k);
 end
 
+%% calculate probit function
 function p = probit(miu,std)
 p = (miu./(1 + pi.*(std.^2)./8).^0.5);
 end
 
+%% initiate neural network
 function nn = netconfig(layer)
 nn.size                 = layer;
 nn.n                    = numel(nn.size);  %  Number of layer
@@ -1087,6 +1102,7 @@ nn.momentum                         = 0.95;          %  Momentum
 nn.output                           = 'softmax';    %  output unit 'sigm' (=logistic), 'softmax' and 'linear'
 end
 
+%% calculate performance metrics
 function [f_measure,g_mean,recall,precision,err] = stats(f, h, mclass)
 %   [f_measure,g_mean,recall,precision,err] = stats(f, h, mclass)
 %     @f - vector of true labels
