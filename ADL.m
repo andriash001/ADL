@@ -21,13 +21,14 @@
 % SOFTWARE.
 
 %% main code
-function [parameter,performance] = ADL(data,I)
+function [parameter,performance] = ADL2(data,I)
 %% divide the data into nFolds chunks
 fprintf('=========Parallel Autonomous Deep Learning is started=========\n')
 [nData,mn] = size(data);
+data_original = data;
 M = mn - I;
 l = 0;
-nFolds       = round(length(data)/500);                 % number of data chunk
+nFolds       = round(size(data,1)/500);                 % number of data chunk
 chunk_size   = round(nData/nFolds);
 round_nFolds = floor(nData/chunk_size);
 Data = {};
@@ -105,7 +106,6 @@ for t = 1:nFolds
     x = Data{t}(:,1:I);
     T = Data{t}(:,I+1:mn);
     [bd,~] = size(T);
-    tTarget(bd*t+(1-bd):bd*t,:) = T;
     clear Data{t}
     
     %% neural network testing
@@ -122,9 +122,6 @@ for t = 1:nFolds
     out(bd*t+(1-bd):bd*t,:) = parameter.nn.out;
     parameter.residual_error(bd*t+(1-bd):bd*t,:) = parameter.nn.residual_error;
     parameter.cr(t) = parameter.nn.cr;
-    ClassificationRate(t) = mean(parameter.cr);
-    fprintf('Classification rate %d\n', ClassificationRate(t))
-    disp('Discriminative Testing: ... finished');
     
     %% statistical measure
     [performance.ev.f_measure(t,:),performance.ev.g_mean(t,:),performance.ev.recall(t,:),performance.ev.precision(t,:),performance.ev.err(t,:)] = stats(parameter.nn.act, parameter.nn.out, M);
@@ -229,19 +226,20 @@ for t = 1:nFolds
         if abs(miu_G - miu_H) > epsilon_D && cuttingpoint > 1 && cuttingpoint < pp
             st = 1;
             disp('Drift state: DRIFT');
-            layer = layer + 1;
-            parameter.nn.n  = parameter.nn.n + 1;
-            parameter.nn.hl = layer;
+            layer              = layer + 1;
+            parameter.nn.n     = parameter.nn.n + 1;
+            parameter.nn.hl    = layer;
+            parameter.nn.index = parameter.nn.hl;
             fprintf('The new Layer no %d is FORMED around chunk %d\n', layer, t)
             
             %% initiate NN weight parameters
             [ii,~] = size(parameter.nn.W{layer-1});
-            parameter.nn.W {layer} = normrnd(0,sqrt(2/(ii+1)),[1,ii+1]);      
+            parameter.nn.W {layer} = normrnd(0,sqrt(2/(ii+1)),[1,ii+1]);
             parameter.nn.vW{layer} = zeros(1,ii+1);
             parameter.nn.dW{layer} = zeros(1,ii+1);
             
             %% initiate new classifier weight
-            parameter.nn.Ws {layer} = normrnd(0,1,[M,2]);     
+            parameter.nn.Ws {layer} = normrnd(0,1,[M,2]);
             parameter.nn.vWs{layer} = zeros(M,2);
             parameter.nn.dWs{layer} = zeros(M,2);
             
@@ -276,21 +274,15 @@ for t = 1:nFolds
             
             %% check buffer
             if isempty(buffer_x)
-                h = parameter.nn.a{end}(:,2:end);
-                z = T;
             else
-                buffer_x = netffhl(parameter.nn,buffer_x);
-                h = [buffer_x(:,2:end);parameter.nn.a{end}(:,2:end)];
-                z = [buffer_T;T];
+                x = [parameter.nn.a{1}(:,2:end);buffer_x]; % input for discriminative training
+                T = [T;buffer_T];
+                parameter.nn.T = T;
+                parameter.nn = netfeedforward(parameter.nn, x, T);
             end
-            
-            %% discriminative training for new layer
-            disp('Discriminative Training for new layer: running ...');
-            parameter = nettrainsingle(parameter,h,z);
-            disp('Discriminative Training for new layer: ... finished');
             buffer_x = [];
             buffer_T = [];
-        elseif abs(miu_G - miu_H) >= epsilon_W && abs(miu_G - miu_H) < epsilon_D
+        elseif abs(miu_G - miu_H) >= epsilon_W && abs(miu_G - miu_H) < epsilon_D && st ~= 2
             st = 2;
             disp('Drift state: WARNING');
             buffer_x = x;
@@ -298,6 +290,16 @@ for t = 1:nFolds
         else
             st = 3;
             disp('Drift state: STABLE');
+            
+            %% check buffer
+            if isempty(buffer_x)
+                
+            else
+                x  = [buffer_x;x];
+                T  = [buffer_T;T];
+                parameter.nn.T = T;
+                parameter.nn = netfeedforward(parameter.nn, x, T);
+            end
             buffer_x = [];
             buffer_T = [];
         end
@@ -312,10 +314,8 @@ for t = 1:nFolds
     parameter.wl(t) = parameter.nn.index;
     
     %% Discrinimanive training for winning layer
-    if st ~= 1
-        disp('Discriminative Training: running ...');
+    if st ~= 2
         parameter = nettrainparallel(parameter,T);
-        disp('Discriminative Training: ... finished');
     end
     parameter.nn.update_time(t) = toc(start_train);
     
@@ -324,7 +324,6 @@ for t = 1:nFolds
     parameter.nn.a = {};
     fprintf('=========Hidden layer number %d was updated=========\n', parameter.nn.index)
 end
-clc
 
 %% statistical measure
 [performance.f_measure,performance.g_mean,performance.recall,performance.precision,performance.err] = stats(act, out, M);
@@ -349,49 +348,6 @@ performance.meanode = meanode;
 performance.stdnode = stdnode;
 performance.NumberOfParameters = parameter.nn.mnop;
 parameter.HL = HL;
-
-%% plot the result
-subplot(3,1,1)
-plot(ClassificationRate)
-ylim([0 1.1]);
-xlim([1 nFolds]);
-ylabel('Classification Rate')
-subplot(3,1,2)
-plot(parameter.cr)
-ylim([0 1.1]);
-xlim([1 nFolds]);
-ylabel('Classification Rate (t)')
-subplot(3,1,3)
-plot(HL)
-ylabel('No of Layer')
-xlim([1 nFolds]);
-xlabel('chunk');
-hold off
-figure
-plotconfusion(tTarget(2:end,:)',tTest(2:end,:)');
-
-%% display the results
-
-end
-
-%% feedforward operation
-function y = netffhl(nn,x)
-n = nn.n - 1;
-m = size(x,1);
-x = [ones(m,1) x];      % by adding 1 to the first coulomn, it means the first coulomn of W is bias
-nn.a{1} = x;            % the first activity is the input itself
-
-%% feedforward from input layer through all the hidden layer
-for i = 2 : n-1
-    switch nn.activation_function
-        case 'sigm'
-            nn.a{i} = sigmf(nn.a{i - 1} * nn.W{i - 1}',[1,0]);
-        case 'relu'
-            nn.a{i} = max(nn.a{i - 1} * nn.W{i - 1}',0);
-    end
-    nn.a{i} = [ones(m,1) nn.a{i}];
-end
-y = nn.a{i};
 end
 
 %% testing phase
@@ -399,66 +355,56 @@ function [nn] = nettestparallel(nn, x, T, ev)
 %% feedforward
 nn = netfeedforward(nn, x, T);
 [m1,m2] = size(T);
+factor = 1/m1;
 
 %% obtain trueclass label
 [~,act] = max(T,[],2);
-
-if numel(nn.betaOld) > 1
-    nn.sigma = zeros(m1,m2);
-    for t = 1 : m1
-        for i = 1 : nn.hl
-            if nn.beta(i) ~= 0
-                %% obtain the predicted label
-                % note that the layer weight betaOld is fixed
-                nn.sigma(t,:) = nn.sigma(t,:) + nn.as{i}(t,:)*nn.betaOld(i);
-                [~, nn.classlabel{i}(t,:)] = max(nn.as{i}(t,:),[],2);
-                compare = act(t,:) - nn.classlabel{i}(t,:);
-                
-                %% train the weighted voting
-                if compare ~= 0
-                    nn.beta(i) = max(nn.beta(i)*nn.p(i),0);
-                    nn.p(i) = max(nn.p(i)-0.01,0);
-                elseif compare == 0
-                    nn.beta(i) = min(nn.beta(i)*(1+nn.p(i)),1);
-                    nn.p(i) = min(nn.p(i)+0.01,1);
-%                     ev{i}.cr = ev{i}.cr + 1;
-                end
-            end
+delList  = [];
+ndelList = 0;
+nn.sigma = zeros(m1,m2);
+for t = 1 : m1
+    for i = 1 : nn.hl
+        if nn.beta(i) ~= 0
+            %% obtain the predicted label
+            % note that the layer weight betaOld is fixed
+            nn.sigma(t,:) = nn.sigma(t,:) + nn.as{i}(t,:)*nn.betaOld(i);
+            [~, nn.classlabel{i}(t,:)] = max(nn.as{i}(t,:),[],2);
+            compare = act(t,:) - nn.classlabel{i}(t,:);
             
-            if t == m1
-                %% calculate the number of parameter
-                if nn.beta(i) ~= 0
-                    [c,d] = size(nn.Ws{i});
-                    vw = 1;
-                else
-                    c = 0;
-                    d = 0;
-                    vw = 0;
-                end
-                [a,b] = size(nn.W{i});
-                nop(i) = a*b + c*d + vw;
-                
-                %% calculate the number of node in each hidden layer
-                nn.nodes{i}(nn.t) = ev{i}.K;
+            %% train the weighted voting
+            if compare ~= 0
+                nn.p(i) = max(nn.p(i)-factor,factor);
+                nn.beta(i) = max(nn.beta(i)*nn.p(i),factor);
+            elseif compare == 0
+                nn.p(i) = min(nn.p(i)+factor,1);
+                nn.beta(i) = min(nn.beta(i)*(1+nn.p(i)),1);
             end
         end
-        nn.beta = nn.beta/sum(nn.beta);
+        
+        if t == m1
+            %% calculate the number of parameter
+            if nn.beta(i) ~= 0
+                [c,d] = size(nn.Ws{i});
+                vw = 1;
+            else
+                c = 0;
+                d = 0;
+                vw = 0;
+            end
+            [a,b] = size(nn.W{i});
+            nop(i) = a*b + c*d + vw;
+            
+            %% calculate the number of node in each hidden layer
+            nn.nodes{i}(nn.t) = ev{i}.K;
+        end
     end
-elseif numel(nn.betaOld) == 1
-    nn.sigma = nn.as{1};
-%     [~, nn.classlabel{1}] = max(nn.as{1},[],2);
-%     nn.bad = find(nn.classlabel{1} ~= act);
-%     ev{1}.cr = 1 - numel(nn.bad)/m1;
-    [c,d] = size(nn.Ws{1});
-    vw = 1;
-    [a,b] = size(nn.W{1});
-    nop = a*b + c*d + vw;
-    nn.nodes{1}(nn.t) = ev{1}.K;
 end
+
 nn.nop(nn.t) = sum(nop);
 nn.mnop = [mean(nn.nop) std(nn.nop)];
 
 %% update the voting weight
+nn.beta = nn.beta/sum(nn.beta);
 nn.betaOld = nn.beta;
 [~,nn.index] = max(nn.beta);
 
@@ -517,218 +463,6 @@ for i = 1 : nn.hl
 end
 end
 
-%% train the newly created layer
-function parameter  = nettrainsingle(parameter,x,y)
-[~,bb] = size(parameter.nn.W{parameter.nn.hl});
-grow = 0;
-prune = 0;
-
-%% initiate performance matrix
-ly          = parameter.nn.hl;
-kp          = parameter.ev{1}.kp;
-miu_x_old   = parameter.ev{1}.miu_x_old;
-var_x_old   = parameter.ev{1}.var_x_old;
-kl          = parameter.ev{ly}.kl;
-K           = parameter.ev{ly}.K;
-node        = parameter.ev{ly}.node;
-BIAS2       = parameter.ev{ly}.BIAS2;
-VAR         = parameter.ev{ly}.VAR;
-miu_NS_old  = parameter.ev{ly}.miu_NS_old;
-var_NS_old  = parameter.ev{ly}.var_NS_old;
-miu_NHS_old = parameter.ev{ly}.miu_NHS_old;
-var_NHS_old = parameter.ev{ly}.var_NHS_old;
-miumin_NS   = parameter.ev{ly}.miumin_NS;
-miumin_NHS  = parameter.ev{ly}.miumin_NHS;
-stdmin_NS   = parameter.ev{ly}.stdmin_NS;
-stdmin_NHS  = parameter.ev{ly}.stdmin_NHS;
-
-%% initiate training model
-net = netconfigtrain([1 1 1]);
-
-%% substitute the weight to be trained to training model
-net.activation_function = parameter.nn.activation_function;
-net.W{1}  = parameter.nn.W{ly};
-net.vW{1} = parameter.nn.vW{ly};
-net.dW{1} = parameter.nn.dW{ly};
-net.W{2}  = parameter.nn.Ws{ly};
-net.vW{2} = parameter.nn.vWs{ly};
-net.dW{2} = parameter.nn.dWs{ly};
-
-%% load data
-[N,I] = size(x);
-kk    = randperm(N);
-x     = [ones(N,1) x(kk,:)];
-y     = y(kk,:);
-
-%% xavier initialization
-n_in = parameter.ev{ly-1}.K;
-
-%% main loop, train the model
-for k = 1 : N
-    kp = kp + 1;
-    kl = kl + 1;
-        
-    %% Incremental calculation of x_tail mean and variance
-    if k <= size(parameter.nn.a{1},1)
-        [miu_x,std_x,var_x] = meanstditer(miu_x_old,var_x_old,parameter.nn.a{1}(k,:),kp);
-        miu_x_old = miu_x;
-        var_x_old = var_x;
-        
-        %% Expectation of z
-        py = probit(miu_x,std_x)';
-        for ii = 1:parameter.nn.hl
-            if ii == parameter.nn.hl
-                py = sigmf(net.W{1}*py,[1,0]);
-            else
-                py = sigmf(parameter.nn.W{ii}*py,[1,0]);
-            end
-            py = [1;py];
-            if ii == 1
-                Ey2 = py.^2;
-            end
-        end
-        Ey = py;
-        Ez = net.W{2}*Ey;
-        Ez = exp(Ez - max(Ez));
-        Ez = Ez./sum(Ez);
-        if parameter.nn.hl > 1
-            py = Ey2;
-            for ii = 2:parameter.nn.hl
-                if ii == parameter.nn.hl
-                    py = sigmf(net.W{1}*py,[1,0]);
-                else
-                    py = sigmf(parameter.nn.W{ii}*py,[1,0]);
-                end
-                py = [1;py];
-            end
-            Ey2 = py;
-        end
-        Ez2 = net.W{2}*Ey2;
-        Ez2 = exp(Ez2 - max(Ez2));
-        Ez2 = Ez2./sum(Ez2);
-        
-        %% Network mean calculation
-        bias2 = (Ez - y(k,:)').^2;
-        ns = bias2;
-%         NS = mean(ns);
-        NS = norm(ns,'fro');
-        
-        %% Incremental calculation of NS mean and variance
-        [miu_NS,std_NS,var_NS] = meanstditer(miu_NS_old,var_NS_old,NS,kl);
-        miu_NS_old = miu_NS;
-        var_NS_old = var_NS;
-        miustd_NS = miu_NS + std_NS;
-        miuNS(k,:) = miu_NS;
-        if kl <= 1 || grow == 1
-            miumin_NS = miu_NS;
-            stdmin_NS = std_NS;
-        else
-            if miu_NS < miumin_NS
-                miumin_NS = miu_NS;
-            end
-            if std_NS < stdmin_NS
-                stdmin_NS = std_NS;
-            end
-        end
-        miustdmin_NS = miumin_NS + (1.3*exp(-NS)+0.7)*stdmin_NS;
-        BIAS2(kp,:) = miu_NS;
-        
-        %% growing hidden unit
-        if miustd_NS >= miustdmin_NS && kl > 1
-            grow = 1;
-            K = K + 1;
-            fprintf('The new node no %d is FORMED around sample %d\n', K, k)
-            node(kp)  = K;
-            net.W{1}  = [net.W{1};normrnd(0,sqrt(2/(n_in+1)),[1,bb])];
-            net.vW{1} = [net.vW{1};zeros(1,bb)];
-            net.dW{1} = [net.dW{1};zeros(1,bb)];
-            net.W{2}  = [net.W{2} normrnd(0,sqrt(2/(K+1)),[parameter.nn.size(end),1])];
-            net.vW{2} = [net.vW{2} zeros(parameter.nn.size(end),1)];
-            net.dW{2} = [net.dW{2} zeros(parameter.nn.size(end),1)];
-        else
-            grow = 0;
-            node(kp) = K;
-        end
-        
-        %% Network variance calculation
-        var = Ez2 - Ez.^2;
-%         NHS = mean(var);
-        NHS = norm(var,'fro');
-        
-        %% Incremental calculation of NHS mean and variance
-        [miu_NHS,std_NHS,var_NHS] = meanstditer(miu_NHS_old,var_NHS_old,NHS,kl);
-        miu_NHS_old = miu_NHS;
-        var_NHS_old = var_NHS;
-        miustd_NHS = miu_NHS + std_NHS;
-        miuNHS(k,:) = miu_NHS;
-        if kl <= I + 1 || prune == 1
-            miumin_NHS = miu_NHS;
-            stdmin_NHS = std_NHS;
-        else
-            if miu_NHS < miumin_NHS
-                miumin_NHS = miu_NHS;
-            end
-            if std_NHS < stdmin_NHS
-                stdmin_NHS = std_NHS;
-            end
-        end
-        miustdmin_NHS = miumin_NHS + (2.6*exp(-NHS)+1.4)*stdmin_NHS;
-        VAR(kp,:) = miu_NHS;
-        
-        %% pruning hidden unit
-        if grow == 0 && K > 1 && miustd_NHS >= miustdmin_NHS && kl > I + 1
-            HS = Ey(2:end);
-            [~,BB] = min(HS);
-            fprintf('The node no %d is PRUNED around sample %d\n', BB, k)
-            prune = 1;
-            K = K - 1;
-            node(kp) = K;
-            net.W{1}(BB,:)  = [];
-            net.vW{1}(BB,:) = [];
-            net.dW{1}(BB,:) = [];
-            net.W{2}(:,BB+1)  = [];
-            net.vW{2}(:,BB+1) = [];
-            net.dW{2}(:,BB+1) = [];
-        else
-            node(kp) = K;
-            prune = 0;
-        end
-        
-        %% feedforward
-        net = netffsingle(net, x(k,:), y(k,:));
-    end
-    
-    %% feedforward #2, executed if there is a hidden node changing
-    net = netbackpropagation(net);
-    net = netupdate(net);
-end
-
-%% substitute the weight back to main model
-parameter.nn.W{ly}   = net.W{1};
-parameter.nn.Ws{ly}  = net.W{2};
-
-%% reset momentum and gradient
-parameter.nn.vW{ly}  = net.vW{1}*0;
-parameter.nn.dW{ly}  = net.dW{1}*0;
-parameter.nn.vWs{ly} = net.vW{2}*0;
-parameter.nn.dWs{ly} = net.dW{2}*0;
-
-%% substitute the recursive calculation
-parameter.ev{ly}.kl          = kl;
-parameter.ev{ly}.K           = K;
-parameter.ev{ly}.node        = node;
-parameter.ev{ly}.BIAS2       = BIAS2;
-parameter.ev{ly}.VAR         = VAR;
-parameter.ev{ly}.miu_NS_old  = miu_NS_old;
-parameter.ev{ly}.var_NS_old  = var_NS_old;
-parameter.ev{ly}.miu_NHS_old = miu_NHS_old;
-parameter.ev{ly}.var_NHS_old = var_NHS_old;
-parameter.ev{ly}.miumin_NS   = miumin_NS;
-parameter.ev{ly}.miumin_NHS  = miumin_NHS;
-parameter.ev{ly}.stdmin_NS   = stdmin_NS;
-parameter.ev{ly}.stdmin_NHS  = stdmin_NHS;
-end
-
 %% train the winning layer
 function parameter  = nettrainparallel(parameter,y)
 [~,bb] = size(parameter.nn.W{parameter.nn.index});
@@ -769,9 +503,11 @@ net.dW{2} = parameter.nn.dWs{ly};
 %% load the data for training
 x = parameter.nn.a{ly};
 [N,I] = size(x);
-kk = randperm(N);
+% kk = randperm(N);
+kk = randperm(N,round(0.75*N));
 x = x(kk,:);
 y = y(kk,:);
+[N,~] = size(x);
 
 %% xavier initialization
 if ly > 1
@@ -784,7 +520,7 @@ end
 for k = 1 : N
     kp = kp + 1;
     kl = kl + 1;
-        
+    
     %% Incremental calculation of x_tail mean and variance
     [miu_x,std_x,var_x] = meanstditer(miu_x_old,var_x_old,parameter.nn.a{1}(k,:),kp);
     miu_x_old = miu_x;
@@ -826,7 +562,7 @@ for k = 1 : N
     %% Network mean calculation
     bias2 = (Ez - y(k,:)').^2;
     ns = bias2;
-%     NS = mean(ns);
+    %     NS = mean(ns);
     NS = norm(ns,'fro');
     
     %% Incremental calculation of NS mean and variance
@@ -854,7 +590,7 @@ for k = 1 : N
     if miustd_NS >= miustdmin_NS && kl > 1
         grow = 1;
         K = K + 1;
-        fprintf('The new node no %d is FORMED around sample %d\n', K, k)
+        fprintf('The new node no %d is FORMED around sample %d\n', K, kp)
         node(kp)  = K;
         net.W{1}  = [net.W{1};normrnd(0,sqrt(2/(n_in+1)),[1,bb])];
         net.vW{1} = [net.vW{1};zeros(1,bb)];
@@ -875,7 +611,7 @@ for k = 1 : N
     
     %% Network variance calculation
     var = Ez2 - Ez.^2;
-%     NHS = mean(var);
+    %     NHS = mean(var);
     NHS = norm(var,'fro');
     
     %% Incremental calculation of NHS mean and variance
@@ -903,7 +639,7 @@ for k = 1 : N
     if grow == 0 && K > 1 && miustd_NHS >= miustdmin_NHS && kl > I + 1
         HS = Ey(2:end);
         [~,BB] = min(HS);
-        fprintf('The node no %d is PRUNED around sample %d\n', BB, k)
+        fprintf('The node no %d is PRUNED around sample %d\n', BB, kp)
         prune = 1;
         K = K - 1;
         node(kp) = K;
