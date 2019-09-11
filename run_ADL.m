@@ -31,13 +31,14 @@ load electricitypricing; I = 8;
 % load hyperplane; I = 4;
 
 %% run stacked autonomous deep learning
-chunkSize = 500; % no of data in a batch
-epoch = 1;       % no of epoch
-alpha_w = 0.005; % alpha warning
-alpha_d = 0.001; % alpha drift
-delta   = 0.05;  % pruning layer coefficient delta
-[parameter,performance] = ADL(data,I,chunkSize,epoch,alpha_w,alpha_d,...
-    delta);
+chunkSize = 500;        % no of data in a batch
+epoch = 1;              % no of epoch
+dataProportion = 1;     % portion of labeled samples
+alpha_w = 0.0005;       
+alpha_d = 0.0001;
+delta   = 0.05;
+[parameter,performance] = ADL(data,I,chunkSize,epoch,dataProportion,...
+    alpha_w,alpha_d,delta);
 clear data
 disp(performance)
 
