@@ -21,7 +21,8 @@
 % SOFTWARE.
 
 %% main code
-function [parameter,performance] = ADL(data,I,chunkSize,epoch,dataProportion)
+function [parameter,performance] = ADL(data,I,chunkSize,epoch,dataProportion,alpha_w,alpha_d,...
+    delta)
 %% divide the data into nFolds chunks
 fprintf('=========Parallel Autonomous Deep Learning is started=========\n')
 [nData,mn] = size(data);
@@ -86,9 +87,7 @@ parameter.ev{1}.stdmin_NS   = [];
 parameter.ev{1}.stdmin_NHS  = [];
 
 %% initiate drift detection parameter
-alpha_w = 0.0005;
-alpha_d = 0.0001;
-alpha   = 0.0001;
+alpha   = alpha_d;
 
 %% initiate layer merging iterative parameters
 for k3=1:M
@@ -96,7 +95,7 @@ for k3=1:M
     covariance(:,1,k3) = 0;
 end
 covariance_old             = covariance;
-threshold                  = 0.05;      % similarity measure
+threshold                  = delta;      % similarity measure
 parameter.prune_list       = 0;
 parameter.prune_list_index = [];
 
