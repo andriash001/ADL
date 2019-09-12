@@ -24,7 +24,7 @@
 function [parameter,performance] = ADL(data,I,chunkSize,epoch,alpha_w,alpha_d,...
     delta)
 %% divide the data into nFolds chunks
-dataProportion = 1;     % portion of labeled samples
+dataProportion = 1;     % portion of labeled samples, 0-1
 fprintf('=========Parallel Autonomous Deep Learning is started=========\n')
 [nData,mn] = size(data);
 % data_original = data;
@@ -178,8 +178,8 @@ for t = 1:nFolds
         end
         del_list = [];
         for i = 1:size(merged_list,1)
-            No2 = find(merged_list(i,:) == 0, 1);
-            if isempty(No2)
+            noOfHighlyCorrelated = find(merged_list(i,:) == 0, 1);
+            if isempty(noOfHighlyCorrelated)
                 if parameter.net.beta(merged_list(i,1)) > parameter.net.beta(merged_list(i,2))
                     a = merged_list(i,1);
                     b = merged_list(i,2);
@@ -712,7 +712,7 @@ function net = netInit(layer)
 net.initialConfig        = layer;
 net.nLayer               = numel(net.initialConfig);  %  Number of layer
 net.nHiddenLayer         = net.nLayer - 2;   %  number of hidden layer
-net.activationFunction   = 'sigm';           %  Activation functions of hidden layers: 'sigmoid function', 'tanh' and 'relu'.
+net.activationFunction   = 'sigmf';          %  Activation functions of hidden layers: 'sigmoid function', 'tanh' and 'relu'.
 net.learningRate         = 0.01;             %  learning rate smaller value is preferred
 net.momentumCoeff        = 0.95;             %  Momentum coefficient, higher value is preferred
 net.outputConnect        = 1;                %  1: connect all hidden layer output to output layer, otherwise: only the last hidden layer is connected to output
@@ -754,7 +754,7 @@ net.activity{1} = x;        % the first activity is the input itself
 %% feedforward from input layer through all the hidden layer
 for iLayer = 2 : nLayer-1
     switch net.activationFunction
-        case 'sigm'
+        case 'sigmf'
             net.activity{iLayer} = sigmf(net.activity{iLayer - 1} * net.weight{iLayer - 1}',[1,0]);
         case 'tanh'
             net.activity{iLayer} = tanh(net.activity{iLayer - 1} * net.weight{iLayer - 1}');
@@ -768,7 +768,7 @@ end
 for iLayer = 1 : net.nHiddenLayer
     if net.beta(iLayer) ~= 0
         switch net.output
-            case 'sigm'
+            case 'sigmf'
                 net.as{iLayer} = sigmf(net.activity{iLayer + 1} * net.weightSoftmax{iLayer}',[1,0]);
             case 'linear'
                 net.as{iLayer} = net.activity{iLayer + 1} * net.weightSoftmax{iLayer}';
@@ -781,7 +781,7 @@ for iLayer = 1 : net.nHiddenLayer
         
         %% calculate loss function
         switch net.output
-            case {'sigm', 'linear'}
+            case {'sigmf', 'linear'}
                 net.loss(iLayer) = 1/2 * sum(sum(net.error{iLayer} .^ 2)) / batchSize;
             case 'softmax'
                 net.loss(iLayer) = -sum(sum(output .* log(net.as{iLayer}))) / batchSize;
@@ -799,7 +799,7 @@ net.activity{1} = input;
 %% feedforward from input layer through all the hidden layer
 for iLayer = 2 : nLayer-1
     switch net.activationFunction
-        case 'sigm'
+        case 'sigmf'
             net.activity{iLayer} = sigmf(net.activity{iLayer - 1} * net.weight{iLayer - 1}',[1,0]);
         case 'tanh'
             net.activity{iLayer} = tanh(net.activity{iLayer - 1} * net.weight{iLayer - 1}');
@@ -811,7 +811,7 @@ end
 
 %% propagate to the output layer
 switch net.output
-    case 'sigm'
+    case 'sigmf'
         net.activity{nLayer} = sigmf(net.activity{nLayer - 1} * net.weight{nLayer - 1}',[1,0]);
     case 'linear'
         net.activity{nLayer} = net.activity{nLayer - 1} * net.weight{nLayer - 1}';
@@ -829,7 +829,7 @@ nLayer = net.nLayer;
 
 %% error backward
 switch net.output
-    case 'sigm'
+    case 'sigmf'
         backPropSignal{nLayer} = - net.error .* (net.activity{nLayer} .* (1 - net.activity{nLayer}));
     case {'softmax','linear'}
         backPropSignal{nLayer} = - net.error;          % dL/dy
@@ -838,13 +838,13 @@ end
 %% activation backward
 for i = (nLayer - 1) : -1 : 2
     switch net.activationFunction
-        case 'sigm'
+        case 'sigmf'
             actFuncDerivative = net.activity{i} .* (1 - net.activity{i}); % contains b
         case 'tanh'
             actFuncDerivative = 1 - net.activity{i}.^2;
         case 'relu'
             actFuncDerivative = zeros(1,length(net.activity{i}));
-            actFuncDerivative(net.activity{i}>0) = 1;
+            actFuncDerivative(net.activity{i}>0) = 0.1;
     end
     
     if i+1 == nLayer
