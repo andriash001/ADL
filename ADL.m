@@ -25,7 +25,7 @@ function [parameter,performance] = ADL(data,I,chunkSize,epoch,alpha_w,alpha_d,..
     delta)
 %% divide the data into nFolds chunks
 dataProportion = 1;     % portion of labeled samples, 0-1
-fprintf('=========Parallel Autonomous Deep Learning is started=========\n')
+fprintf('=========Autonomous Deep Learning is started=========\n')
 [nData,mn] = size(data);
 % data_original = data;
 M = mn - I;
@@ -63,7 +63,7 @@ tTest = [];
 clear data Data1
 
 %% initiate model
-K            = 1;          %initial node
+K = 1;          %initial node
 parameter.net = netInit([I K M]);
 
 %% initiate node evolving iterative parameters
@@ -100,39 +100,36 @@ threshold                  = delta;      % similarity measure
 parameter.prune_list       = 0;
 parameter.prune_list_index = [];
 
-count_net = 0;
-gap_net = 10000;
-
 %% main loop, prequential evaluation
-for t = 1:nFolds
+for iFolds = 1:nFolds
     %% load the data chunk-by-chunk
-    x = Data{t}(:,1:I);
-    T = Data{t}(:,I+1:mn);
+    x = Data{iFolds}(:,1:I);
+    T = Data{iFolds}(:,I+1:mn);
     [bd,~] = size(T);
     clear Data{t}
     
     %% neural network testing
     start_test = tic;
-    fprintf('=========Chunk %d of %d=========\n', t, size(Data,2))
+    fprintf('=========Chunk %d of %d=========\n', iFolds, size(Data,2))
     disp('Discriminative Testing: running ...');
-    parameter.net.t = t;
+    parameter.net.t = iFolds;
     [parameter.net] = testing(parameter.net,x,T,parameter.ev);
     
     %% metrics calculation
-    parameter.Loss(t) = parameter.net.loss(parameter.net.index);
-    tTest(bd*t+(1-bd):bd*t,:) = parameter.net.sigma;
-    acttualLabel(bd*t+(1-bd):bd*t,:) = parameter.net.acttualLabel;
-    classPerdiction(bd*t+(1-bd):bd*t,:) = parameter.net.classPerdiction;
-    parameter.residual_error(bd*t+(1-bd):bd*t,:) = parameter.net.residual_error;
-    parameter.cr(t) = parameter.net.cr;
+    parameter.Loss(iFolds) = parameter.net.loss(parameter.net.index);
+    tTest(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.sigma;
+    acttualLabel(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.acttualLabel;
+    classPerdiction(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.classPerdiction;
+    parameter.residual_error(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.residual_error;
+    parameter.cr(iFolds) = parameter.net.cr;
     
     %% statistical measure
-    [performance.ev.f_measure(t,:),performance.ev.g_mean(t,:),performance.ev.recall(t,:),performance.ev.precision(t,:),performance.ev.err(t,:)] = stats(parameter.net.acttualLabel, parameter.net.classPerdiction, M);
-    if t == nFolds
+    [performance.ev.f_measure(iFolds,:),performance.ev.g_mean(iFolds,:),performance.ev.recall(iFolds,:),performance.ev.precision(iFolds,:),performance.ev.err(iFolds,:)] = performanceMeasure(parameter.net.acttualLabel, parameter.net.classPerdiction, M);
+    if iFolds == nFolds
         fprintf('=========Parallel Autonomous Deep Learning is finished=========\n')
         break               % last chunk only testing
     end
-    parameter.net.test_time(t) = toc(start_test);
+    parameter.net.test_time(iFolds) = toc(start_test);
     
     %% Layer merging mechanism
     start_train = tic;
@@ -141,9 +138,9 @@ for t = 1:nFolds
         for iter1 = 1:layer
             if parameter.net.beta(iter) ~= 0 && parameter.net.beta(iter1) ~= 0
                 for iter2 = 1:M
-                    temporary = cov(parameter.net.as{iter1}(:,iter2),parameter.net.as{iter}(:,iter2));
+                    temporary = cov(parameter.net.activityOutput{iter1}(:,iter2),parameter.net.activityOutput{iter}(:,iter2));
                     outputcovar(iter,iter1,iter2) = temporary(1,2);
-                    covariance (iter,iter1,iter2) = (covariance_old(iter,iter1,iter2)*(t - 1) + (((t - 1)/t)*outputcovar(iter,iter1,iter2)))/t;
+                    covariance (iter,iter1,iter2) = (covariance_old(iter,iter1,iter2)*(iFolds - 1) + (((iFolds - 1)/iFolds)*outputcovar(iter,iter1,iter2)))/iFolds;
                 end
             end
         end
@@ -191,7 +188,7 @@ for t = 1:nFolds
             end
         end
         if isempty(del_list) == false && parameter.net.beta(del_list) ~= 0
-            fprintf('The Hidden Layer no %d is PRUNED around chunk %d\n', del_list, t)
+            fprintf('The Hidden Layer no %d is PRUNED around chunk %d\n', del_list, iFolds)
             parameter.net.beta(del_list) = 0;
         end
         parameter.prune_list       = parameter.prune_list + length(del_list);
@@ -199,7 +196,7 @@ for t = 1:nFolds
     end
     
     %% Drift detection: output space
-    if t > 1
+    if iFolds > 1
         cuttingpoint = 0;
         pp    = length(T);
         F_cut = zeros(pp,1);
@@ -233,12 +230,12 @@ for t = 1:nFolds
             parameter.net.nLayer       = parameter.net.nLayer + 1;
             parameter.net.nHiddenLayer = layer;
             parameter.net.index        = parameter.net.nHiddenLayer;
-            fprintf('The new Layer no %d is FORMED around chunk %d\n', layer, t)
+            fprintf('The new Layer no %d is FORMED around chunk %d\n', layer, iFolds)
             
             %% initiate NN weight parameters
             [ii,~] = size(parameter.net.weight{layer-1});
             parameter.net.weight {layer}  = normrnd(0,sqrt(2/(ii+1)),[1,ii+1]);
-            parameter.net.momentum{layer} = zeros(1,ii+1);
+            parameter.net.velocity{layer} = zeros(1,ii+1);
             parameter.net.grad{layer}     = zeros(1,ii+1);
             
             %% initiate new classifier weight
@@ -312,9 +309,9 @@ for t = 1:nFolds
         buffer_x = [];
         buffer_T = [];
     end
-    drift(t) = st;
-    HL(t) = numel(find(parameter.net.beta ~= 0));
-    parameter.wl(t) = parameter.net.index;
+    drift(iFolds) = st;
+    HL(iFolds) = numel(find(parameter.net.beta ~= 0));
+    parameter.wl(iFolds) = parameter.net.index;
     
     %% Discrinimanive training for winning layer
     if st ~= 2
@@ -322,7 +319,7 @@ for t = 1:nFolds
         parameter = training(parameter,T,epoch,dataProportion);
         %         disp('Discriminative Training: ... finished');
     end
-    parameter.net.update_time(t) = toc(start_train);
+    parameter.net.update_time(iFolds) = toc(start_train);
     
     %% clear current chunk data
     clear Data{t}
@@ -331,7 +328,7 @@ for t = 1:nFolds
 end
 
 %% statistical measure
-[performance.f_measure,performance.g_mean,performance.recall,performance.precision,performance.err] = stats(acttualLabel, classPerdiction, M);
+[performance.f_measure,performance.g_mean,performance.recall,performance.precision,performance.err] = performanceMeasure(acttualLabel, classPerdiction, M);
 
 %% save the numerical result
 parameter.drift         = drift;
@@ -345,7 +342,7 @@ meanode                         = [];
 stdnode                         = [];
 for i = 1:parameter.net.nHiddenLayer
     a = nnz(~parameter.net.nodes{i});
-    parameter.net.nodes{i} = parameter.net.nodes{i}(a+1:t);
+    parameter.net.nodes{i} = parameter.net.nodes{i}(a+1:iFolds);
     meanode = [meanode mean(parameter.net.nodes{i})];
     stdnode = [stdnode std(parameter.net.nodes{i})];
 end
@@ -371,70 +368,7 @@ ylabel('No of hidden layer')
 xlim([1 nFolds]);
 xlabel('chunk');
 hold off
-end
-
-%% testing phase
-function [net] = testing(net, x, T, ev)
-%% feedforward
-net     = netFeedForward(net, x, T);
-[m1,m2] = size(T);
-factor  = 0.001;
-
-%% obtain trueclass label
-[~,acttualLabel] = max(T,[],2);
-net.sigma = zeros(m1,m2);
-for t = 1 : m1
-    for i = 1 : net.nHiddenLayer
-        if net.beta(i) ~= 0
-            %% obtain the predicted label
-            % note that the layer weight betaOld is fixed
-            net.sigma(t,:) = net.sigma(t,:) + net.as{i}(t,:)*net.betaOld(i);
-            [~, net.classlabel{i}(t,:)] = max(net.as{i}(t,:),[],2);
-            compare = acttualLabel(t,:) - net.classlabel{i}(t,:);
-            
-            %% train the weighted voting
-            if compare ~= 0
-                net.p(i) = max(net.p(i)-factor,factor);
-                net.beta(i) = max(net.beta(i)*net.p(i),factor);
-            elseif compare == 0
-                net.p(i) = min(net.p(i)+factor,1);
-                net.beta(i) = min(net.beta(i)*(1+net.p(i)),1);
-            end
-        end
-        
-        if t == m1
-            %% calculate the number of parameter
-            if net.beta(i) ~= 0
-                [c,d] = size(net.weightSoftmax{i});
-                vw = 1;
-            else
-                c = 0;
-                d = 0;
-                vw = 0;
-            end
-            [a,b] = size(net.weight{i});
-            nop(i) = a*b + c*d + vw;
-            
-            %% calculate the number of node in each hidden layer
-            net.nodes{i}(net.t) = ev{i}.K;
-        end
-    end
-end
-net.nop(net.t) = sum(nop);
-net.mnop       = [mean(net.nop) std(net.nop)];
-
-%% update the voting weight
-net.beta      = net.beta/sum(net.beta);
-net.betaOld   = net.beta;
-[~,net.index] = max(net.beta);
-
-%% calculate classification rate
-[multiClassProb,classPerdiction] = max(net.sigma,[],2);
-net.wrongClass      = find(classPerdiction ~= acttualLabel);
-net.cr              = 1 - numel(net.wrongClass)/m1;
-net.residual_error  = 1 - multiClassProb;
-net.classPerdiction = classPerdiction;
-net.acttualLabel    = acttualLabel;
+fprintf('=========Autonomous Deep Learning is finished=========\n')
 end
 
 %% train the winning layer
@@ -469,23 +403,23 @@ net.output             = parameter.net.output;
 
 %% substitute the weight to be trained to training model
 net.weight{1}   = parameter.net.weight{ly};
-net.momentum{1} = parameter.net.momentum{ly};
+net.velocity{1} = parameter.net.velocity{ly};
 net.grad{1}     = parameter.net.grad{ly};
 net.weight{2}   = parameter.net.weightSoftmax{ly};
-net.momentum{2} = parameter.net.momentumSoftmax{ly};
+net.velocity{2} = parameter.net.momentumSoftmax{ly};
 net.grad{2}     = parameter.net.gradSoftmax{ly};
 
 %% load the data for training
 x = parameter.net.activity{ly};
-[N,I]   = size(x);
-s       = RandStream('mt19937ar','Seed',0);
-kk      = randperm(s,N);
-x       = x(kk,:);
-y       = y(kk,:);
-nLabeledData = round(dataProportion*N);
-x       = x(1:nLabeledData,:);
-y       = y(1:nLabeledData,:);
-[N,~]   = size(x);
+[nData,I]   = size(x);
+s           = RandStream('mt19937ar','Seed',0);
+kk          = randperm(s,nData);
+x           = x(kk,:);
+y           = y(kk,:);
+nLabeledData = round(dataProportion*nData);
+x           = x(1:nLabeledData,:);
+y           = y(1:nLabeledData,:);
+[nData,~]   = size(x);
 
 %% xavier initialization
 if ly > 1
@@ -495,12 +429,12 @@ else
 end
 
 %% main loop, train the model
-for k = 1 : N
+for iData = 1 : nData
     kp = kp + 1;
     kl = kl + 1;
     
     %% Incremental calculation of x_tail mean and variance
-    [miu_x,std_x,var_x] = meanstditer(miu_x_old,var_x_old,parameter.net.activity{1}(k,:),kp);
+    [miu_x,std_x,var_x] = meanstditer(miu_x_old,var_x_old,parameter.net.activity{1}(iData,:),kp);
     miu_x_old = miu_x;
     var_x_old = var_x;
     
@@ -538,7 +472,7 @@ for k = 1 : N
     Ez2 = Ez2./sum(Ez2);
     
     %% Network mean calculation
-    bias2 = (Ez - y(k,:)').^2;
+    bias2 = (Ez - y(iData,:)').^2;
     ns    = bias2;
     NS    = norm(ns,'fro');
     
@@ -547,7 +481,7 @@ for k = 1 : N
     miu_NS_old = miu_NS;
     var_NS_old = var_NS;
     miustd_NS  = miu_NS + std_NS;
-    miuNS(k,:) = miu_NS;
+    miuNS(iData,:) = miu_NS;
     if kl <= 1 || grow == 1
         miumin_NS = miu_NS;
         stdmin_NS = std_NS;
@@ -559,7 +493,6 @@ for k = 1 : N
             stdmin_NS = std_NS;
         end
     end
-    miuminNS(k,:) = miumin_NS;
     miustdmin_NS  = miumin_NS + (1.3*exp(-NS)+0.7)*stdmin_NS;
     BIAS2(kp,:)   = miu_NS;
     
@@ -570,15 +503,15 @@ for k = 1 : N
         fprintf('The new node no %d is FORMED around sample %d\n', K, kp)
         node(kp)        = K;
         net.weight{1}   = [net.weight{1};normrnd(0,sqrt(2/(n_in+1)),[1,bb])];
-        net.momentum{1} = [net.momentum{1};zeros(1,bb)];
+        net.velocity{1} = [net.velocity{1};zeros(1,bb)];
         net.grad{1}     = [net.grad{1};zeros(1,bb)];
         net.weight{2}   = [net.weight{2} normrnd(0,sqrt(2/(K+1)),[parameter.net.initialConfig(end),1])];
-        net.momentum{2} = [net.momentum{2} zeros(parameter.net.initialConfig(end),1)];
+        net.velocity{2} = [net.velocity{2} zeros(parameter.net.initialConfig(end),1)];
         net.grad{2}     = [net.grad{2} zeros(parameter.net.initialConfig(end),1)];
         if ly < parameter.net.nHiddenLayer
             [wNext,~]                    = size(parameter.net.weight{ly+1});
             parameter.net.weight{ly+1}   = [parameter.net.weight{ly+1} normrnd(0,sqrt(2/(K+1)),[wNext,1])];
-            parameter.net.momentum{ly+1} = [parameter.net.momentum{ly+1} zeros(wNext,1)];
+            parameter.net.velocity{ly+1} = [parameter.net.velocity{ly+1} zeros(wNext,1)];
             parameter.net.grad{ly+1}     = [parameter.net.grad{ly+1} zeros(wNext,1)];
         end
     else
@@ -595,7 +528,6 @@ for k = 1 : N
     miu_NHS_old = miu_NHS;
     var_NHS_old = var_NHS;
     miustd_NHS  = miu_NHS + std_NHS;
-    miuNHS(k,:) = miu_NHS;
     if kl <= I+1 || prune == 1
         miumin_NHS = miu_NHS;
         stdmin_NHS = std_NHS;
@@ -619,14 +551,14 @@ for k = 1 : N
         K        = K - 1;
         node(kp) = K;
         net.weight{1}(BB,:)   = [];
-        net.momentum{1}(BB,:) = [];
+        net.velocity{1}(BB,:) = [];
         net.grad{1}(BB,:)     = [];
         net.weight{2}(:,BB+1)   = [];
-        net.momentum{2}(:,BB+1) = [];
+        net.velocity{2}(:,BB+1) = [];
         net.grad{2}(:,BB+1)     = [];
         if ly < parameter.net.nHiddenLayer
             parameter.net.weight{ly+1}(:,BB+1)   = [];
-            parameter.net.momentum{ly+1}(:,BB+1) = [];
+            parameter.net.velocity{ly+1}(:,BB+1) = [];
             parameter.net.grad{ly+1}(:,BB+1)     = [];
         end
     else
@@ -635,9 +567,9 @@ for k = 1 : N
     end
     
     %% feedforward
-    net = netFeedForwardWinner(net, x(k,:), y(k,:));
+    net = netFeedForwardWinner(net, x(iData,:), y(iData,:));
     
-    %% feedforward #2, executed if there is a hidden node changing
+    %% optimize the parameters
     net = lossBackward(net);
     net = optimizerStep(net);
 end
@@ -645,12 +577,12 @@ end
 %% iterative learning
 if nEpoch > 1
     for iEpoch = 1:nEpoch
-        kk = randperm(N);
+        kk = randperm(nData);
         x = x(kk,:);
         y = y(kk,:);
-        for k = 1 : N
+        for iData = 1 : nData
             %% feedforward
-            net = netFeedForwardWinner(net, x(k,:), y(k,:));
+            net = netFeedForwardWinner(net, x(iData,:), y(iData,:));
             
             %% feedforward #2, executed if there is a hidden node changing
             net = lossBackward(net);
@@ -664,9 +596,9 @@ parameter.net.weight{ly}         = net.weight{1};
 parameter.net.weightSoftmax{ly}  = net.weight{2};
 
 %% reset momentumCoeff and gradient
-parameter.net.momentum{ly}  = net.momentum{1}*0;
-parameter.net.grad{ly}      = net.grad{1}*0;
-parameter.net.momentumSoftmax{ly} = net.momentum{2}*0;
+parameter.net.velocity{ly}        = net.velocity{1}*0;
+parameter.net.grad{ly}            = net.grad{1}*0;
+parameter.net.momentumSoftmax{ly} = net.velocity{2}*0;
 parameter.net.gradSoftmax{ly}     = net.grad{2}*0;
 
 %% substitute the recursive calculation
@@ -686,62 +618,6 @@ parameter.ev{ly}.miumin_NS   = miumin_NS;
 parameter.ev{ly}.miumin_NHS  = miumin_NHS;
 parameter.ev{ly}.stdmin_NS   = stdmin_NS;
 parameter.ev{ly}.stdmin_NHS  = stdmin_NHS;
-end
-
-%% calculate recursive mean and standard deviation
-function [miu,std,var] = meanstditer(miu_old,var_old,x,k)
-miu = miu_old + (x - miu_old)./k;
-var = var_old + (x - miu_old).*(x - miu);
-std = sqrt(var/k);
-end
-
-%% calculate probit function
-function p = probit(miu,std)
-p = (miu./(1 + pi.*(std.^2)./8).^0.5);
-end
-
-%% stable softmax
-function output = stableSoftmax(activation,weight)
-output = activation * weight';
-output = exp(output - max(output,[],2));
-output = output./sum(output, 2);
-end
-
-%% initiate neural network
-function net = netInit(layer)
-net.initialConfig        = layer;
-net.nLayer               = numel(net.initialConfig);  %  Number of layer
-net.nHiddenLayer         = net.nLayer - 2;   %  number of hidden layer
-net.activationFunction   = 'sigmf';          %  Activation functions of hidden layers: 'sigmoid function', 'tanh' and 'relu'.
-net.learningRate         = 0.01;             %  learning rate smaller value is preferred
-net.momentumCoeff        = 0.95;             %  Momentum coefficient, higher value is preferred
-net.outputConnect        = 1;                %  1: connect all hidden layer output to output layer, otherwise: only the last hidden layer is connected to output
-net.output               = 'softmax';        %  output layer can be selected as follows: 'sigmoid function', 'softmax function', and 'linear function'
-
-%% initiate weights and weight momentumCoeff for hidden layer
-for i = 2 : net.nLayer - 1
-    net.weight {i - 1}  = normrnd(0,sqrt(2/(net.initialConfig(i-1)+1)),[net.initialConfig(i),net.initialConfig(i - 1)+1]);
-    net.momentum{i - 1} = zeros(size(net.weight{i - 1}));
-    net.grad{i - 1}     = zeros(size(net.weight{i - 1}));
-    net.c{i - 1}        = normrnd(0,sqrt(2/(net.initialConfig(i-1)+1)),[net.initialConfig(i - 1),1]);
-end
-
-%% initiate weights and weight momentumCoeff for output layer
-for i = 1 : net.nHiddenLayer
-    net.weightSoftmax {i}   = normrnd(0,sqrt(2/(size(net.weight{i},1)+1)),[net.initialConfig(end),net.initialConfig(i+1)+1]);
-    net.momentumSoftmax{i}  = zeros(size(net.weightSoftmax{i}));
-    net.gradSoftmax{i}      = zeros(size(net.weightSoftmax{i}));
-    net.beta(i)             = 1;
-    net.betaOld(i)          = 1;
-    net.p(i)                = 1;
-end
-end
-
-function net = netInitWinner(layer)
-net.initialConfig   = layer;                         %  winning layer
-net.nLayer          = numel(net.initialConfig);      %  Number of layer
-net.learningRate                     = 0.01;  %2     %  learning rate, smaller value is preferred
-net.momentumCoeff                    = 0.95;         %  Momentum coefficient, higher value is preferred
 end
 
 %% feedforward operation
@@ -769,31 +645,151 @@ for iLayer = 1 : net.nHiddenLayer
     if net.beta(iLayer) ~= 0
         switch net.output
             case 'sigmf'
-                net.as{iLayer} = sigmf(net.activity{iLayer + 1} * net.weightSoftmax{iLayer}',[1,0]);
+                net.activityOutput{iLayer} = sigmf(net.activity{iLayer + 1} * net.weightSoftmax{iLayer}',[1,0]);
             case 'linear'
-                net.as{iLayer} = net.activity{iLayer + 1} * net.weightSoftmax{iLayer}';
+                net.activityOutput{iLayer} = net.activity{iLayer + 1} * net.weightSoftmax{iLayer}';
             case 'softmax'
-                net.as{iLayer} = stableSoftmax(net.activity{iLayer + 1},net.weightSoftmax{iLayer});
+                net.activityOutput{iLayer} = stableSoftmax(net.activity{iLayer + 1},net.weightSoftmax{iLayer});
         end
         
         %% calculate error
-        net.error{iLayer} = output - net.as{iLayer};
+        net.error{iLayer} = output - net.activityOutput{iLayer};
         
         %% calculate loss function
         switch net.output
             case {'sigmf', 'linear'}
                 net.loss(iLayer) = 1/2 * sum(sum(net.error{iLayer} .^ 2)) / batchSize;
             case 'softmax'
-                net.loss(iLayer) = -sum(sum(output .* log(net.as{iLayer}))) / batchSize;
+                net.loss(iLayer) = -sum(sum(output .* log(net.activityOutput{iLayer}))) / batchSize;
         end
     end
 end
 end
 
+%% testing phase
+function [net] = testing(net, input, trueClass, ev)
+%% feedforward
+net         = netFeedForward(net, input, trueClass);
+[nData,m2]  = size(trueClass);
+factor      = 0.001;
+
+%% obtain trueclass label
+[~,acttualLabel] = max(trueClass,[],2);
+net.sigma = zeros(nData,m2);
+for iData = 1 : nData
+    for iHiddenLayer = 1 : net.nHiddenLayer
+        if net.beta(iHiddenLayer) ~= 0
+            %% obtain the predicted label
+            % note that the layer weight betaOld is fixed
+            net.sigma(iData,:) = net.sigma(iData,:) + net.activityOutput{iHiddenLayer}(iData,:)*net.betaOld(iHiddenLayer);
+            [~, net.classlabel{iHiddenLayer}(iData,:)] = max(net.activityOutput{iHiddenLayer}(iData,:),[],2);
+            compare = acttualLabel(iData,:) - net.classlabel{iHiddenLayer}(iData,:);
+            
+            %% train the weighted voting
+            if compare ~= 0
+                net.p(iHiddenLayer) = max(net.p(iHiddenLayer)-factor,factor);
+                net.beta(iHiddenLayer) = max(net.beta(iHiddenLayer)*net.p(iHiddenLayer),factor);
+            elseif compare == 0
+                net.p(iHiddenLayer) = min(net.p(iHiddenLayer)+factor,1);
+                net.beta(iHiddenLayer) = min(net.beta(iHiddenLayer)*(1+net.p(iHiddenLayer)),1);
+            end
+        end
+        
+        if iData == nData
+            %% calculate the number of parameter
+            if net.beta(iHiddenLayer) ~= 0
+                [c,d] = size(net.weightSoftmax{iHiddenLayer});
+                vw = 1;
+            else
+                c = 0;
+                d = 0;
+                vw = 0;
+            end
+            [a,b] = size(net.weight{iHiddenLayer});
+            nop(iHiddenLayer) = a*b + c*d + vw;
+            
+            %% calculate the number of node in each hidden layer
+            net.nodes{iHiddenLayer}(net.t) = ev{iHiddenLayer}.K;
+        end
+    end
+end
+net.nop(net.t) = sum(nop);
+net.mnop       = [mean(net.nop) std(net.nop)];
+
+%% update the voting weight
+net.beta      = net.beta/sum(net.beta);
+net.betaOld   = net.beta;
+[~,net.index] = max(net.beta);
+
+%% calculate classification rate
+[multiClassProb,classPerdiction] = max(net.sigma,[],2);
+net.wrongClass      = find(classPerdiction ~= acttualLabel);
+net.cr              = 1 - numel(net.wrongClass)/nData;
+net.residual_error  = 1 - multiClassProb;
+net.classPerdiction = classPerdiction;
+net.acttualLabel    = acttualLabel;
+end
+
+%% initiate neural network
+function net = netInit(layer)
+net.initialConfig        = layer;
+net.nLayer               = numel(net.initialConfig);  %  Number of layer
+net.nHiddenLayer         = net.nLayer - 2;   %  number of hidden layer
+net.activationFunction   = 'sigmf';          %  Activation functions of hidden layers: 'sigmoid function', 'tanh' and 'relu'.
+net.learningRate         = 0.01;             %  learning rate smaller value is preferred
+net.momentumCoeff        = 0.95;             %  Momentum coefficient, higher value is preferred
+net.outputConnect        = 1;                %  1: connect all hidden layer output to output layer, otherwise: only the last hidden layer is connected to output
+net.output               = 'softmax';        %  output layer can be selected as follows: 'sigmf', 'softmax', and 'linear'
+
+%% initiate weights and weight momentumCoeff for hidden layer
+for iLayer = 2 : net.nLayer - 1
+    net.weight {iLayer - 1}  = normrnd(0,sqrt(2/(net.initialConfig(iLayer-1)+1)),[net.initialConfig(iLayer),net.initialConfig(iLayer - 1)+1]);
+    net.velocity{iLayer - 1} = zeros(size(net.weight{iLayer - 1}));
+    net.grad{iLayer - 1}     = zeros(size(net.weight{iLayer - 1}));
+    net.c{iLayer - 1}        = normrnd(0,sqrt(2/(net.initialConfig(iLayer-1)+1)),[net.initialConfig(iLayer - 1),1]);
+end
+
+%% initiate weights and weight momentumCoeff for output layer
+for iHiddenLayer = 1 : net.nHiddenLayer
+    net.weightSoftmax {iHiddenLayer}   = normrnd(0,sqrt(2/(size(net.weight{iHiddenLayer},1)+1)),[net.initialConfig(end),net.initialConfig(iHiddenLayer+1)+1]);
+    net.momentumSoftmax{iHiddenLayer}  = zeros(size(net.weightSoftmax{iHiddenLayer}));
+    net.gradSoftmax{iHiddenLayer}      = zeros(size(net.weightSoftmax{iHiddenLayer}));
+    net.beta(iHiddenLayer)             = 1;
+    net.betaOld(iHiddenLayer)          = 1;
+    net.p(iHiddenLayer)                = 1;
+end
+end
+
+%% calculate recursive mean and standard deviation
+function [miu,std,var] = meanstditer(miu_old,var_old,x,k)
+miu = miu_old + (x - miu_old)./k;
+var = var_old + (x - miu_old).*(x - miu);
+std = sqrt(var/k);
+end
+
+%% calculate probit function
+function p = probit(miu,std)
+p = (miu./(1 + pi.*(std.^2)./8).^0.5);
+end
+
+%% stable softmax
+function output = stableSoftmax(activation,weight)
+output = activation * weight';
+output = exp(output - max(output,[],2));
+output = output./sum(output, 2);
+end
+
+function net = netInitWinner(layer)
+net.initialConfig   = layer;                    %  winning layer
+net.nLayer          = numel(net.initialConfig); %  Number of layer
+net.learningRate    = 0.01;  %2                 %  learning rate, smaller value is preferred
+net.momentumCoeff   = 0.95;                     %  Momentum coefficient, higher value is preferred
+end
+
 %% feedforward for a single layer network. It is used to train the winning layer
 function net = netFeedForwardWinner(net, input, output)
 nLayer = net.nLayer;
-m = size(input,1);
+batchSize = size(input,1);
 net.activity{1} = input;
 
 %% feedforward from input layer through all the hidden layer
@@ -806,7 +802,7 @@ for iLayer = 2 : nLayer-1
         case 'relu'
             net.activity{iLayer} = max(net.activity{iLayer - 1} * net.weight{iLayer - 1}',0);
     end
-    net.activity{iLayer} = [ones(m,1) net.activity{iLayer}];  % augment with ones, act as bias multiplier
+    net.activity{iLayer}         = [ones(batchSize,1) net.activity{iLayer}];  % augment with ones, act as bias multiplier
 end
 
 %% propagate to the output layer
@@ -832,34 +828,34 @@ switch net.output
     case 'sigmf'
         backPropSignal{nLayer} = - net.error .* (net.activity{nLayer} .* (1 - net.activity{nLayer}));
     case {'softmax','linear'}
-        backPropSignal{nLayer} = - net.error;          % dL/dy
+        backPropSignal{nLayer} = - net.error;          % loss derivative w.r.t. output
 end
 
 %% activation backward
-for i = (nLayer - 1) : -1 : 2
+for iLayer = (nLayer - 1) : -1 : 2
     switch net.activationFunction
         case 'sigmf'
-            actFuncDerivative = net.activity{i} .* (1 - net.activity{i}); % contains b
+            actFuncDerivative = net.activity{iLayer} .* (1 - net.activity{iLayer}); % contains b
         case 'tanh'
-            actFuncDerivative = 1 - net.activity{i}.^2;
+            actFuncDerivative = 1 - net.activity{iLayer}.^2;
         case 'relu'
-            actFuncDerivative = zeros(1,length(net.activity{i}));
-            actFuncDerivative(net.activity{i}>0) = 0.1;
+            actFuncDerivative = zeros(1,length(net.activity{iLayer}));
+            actFuncDerivative(net.activity{iLayer}>0) = 0.1;
     end
     
-    if i+1 == nLayer
-        backPropSignal{i} = (backPropSignal{i + 1} * net.weight{i}) .* actFuncDerivative;
+    if iLayer+1 == nLayer
+        backPropSignal{iLayer} = (backPropSignal{iLayer + 1} * net.weight{iLayer}) .* actFuncDerivative;
     else
-        backPropSignal{i} = (backPropSignal{i + 1}(:,2:end) * net.weight{i}) .* actFuncDerivative;
+        backPropSignal{iLayer} = (backPropSignal{iLayer + 1}(:,2:end) * net.weight{iLayer}) .* actFuncDerivative;
     end
 end
 
 %% calculate gradient
-for i = 1 : (nLayer - 1)
-    if i + 1 == nLayer
-        net.grad{i} = (backPropSignal{i + 1}' * net.activity{i});
+for iLayer = 1 : (nLayer - 1)
+    if iLayer + 1 == nLayer
+        net.grad{iLayer} = (backPropSignal{iLayer + 1}' * net.activity{iLayer});
     else
-        net.grad{i} = (backPropSignal{i + 1}(:,2:end)' * net.activity{i});
+        net.grad{iLayer} = (backPropSignal{iLayer + 1}(:,2:end)' * net.activity{iLayer});
     end
 end
 end
@@ -868,85 +864,58 @@ end
 function net = optimizerStep(net)
 for iLayer = 1 : (net.nLayer - 1)
     grad = net.grad{iLayer};
-    grad = net.learningRate * grad;
-    net.momentum{iLayer} = net.momentumCoeff*net.momentum{iLayer} + grad;
-    grad                 = net.momentum{iLayer};
+    net.velocity{iLayer} = net.momentumCoeff*net.velocity{iLayer} + net.learningRate * grad;
+    finalGrad            = net.velocity{iLayer};
     
     %% apply the gradient to the weight
-    net.weight{iLayer} = net.weight{iLayer} - grad;
+    net.weight{iLayer} = net.weight{iLayer} - finalGrad;
 end
 end
 
-%% calculate performance metrics
-function [f_measure,g_mean,recall,precision,err] = stats(f, h, mclass)
-%   [f_measure,g_mean,recall,precision,err] = stats(f, h, mclass)
-%     @f - vector of true labels
-%     @h - vector of predictions on f
-%     @mclass - number of classes
-%     @f_measure
-%     @g_mean
-%     @recall
-%     @precision
-%     @err
-%
+%% Performance measure
+function [fMeasure,gMean,recall,precision,error] = performanceMeasure(trueClass, rawOutput, nClass)
+label           = index2vector(trueClass, nClass);
+predictedLabel  = index2vector(rawOutput, nClass);
 
-%     stats.m
-%     Copyright (C) 2013 Gregory Ditzler
-%
-%     This program is free software: you can redistribute it and/or modify
-%     it under the terms of the GNU General Public License as published by
-%     the Free Software Foundation, either version 3 of the License, or
-%     (at your option) any later version.
-%
-%     This program is distributed in the hope that it will be useful,
-%     but WITHOUT ANY WARRANTY; without even the implied warranty of
-%     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-%     GNU General Public License for more details.
-%
-%     You should have received a copy of the GNU General Public License
-%     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+recall      = calculate_recall(label, predictedLabel, nClass);
+error       = 1 - sum(diag(predictedLabel'*label))/sum(sum(predictedLabel'*label));
+precision   = calculate_precision(label, predictedLabel, nClass);
+gMean       = calculate_g_mean(recall, nClass);
+fMeasure    = calculate_f_measure(label, predictedLabel, nClass);
 
-F = index2vector(f, mclass);
-H = index2vector(h, mclass);
 
-recall = compute_recall(F, H, mclass);
-err = 1 - sum(diag(H'*F))/sum(sum(H'*F));
-precision = compute_precision(F, H, mclass);
-g_mean = compute_g_mean(recall, mclass);
-f_measure = compute_f_measure(F, H, mclass);
-end
+    function gMean = calculate_g_mean(recall, nClass)
+        gMean = (prod(recall))^(1/nClass);
+    end
 
-function g_mean = compute_g_mean(recall, mclass)
-g_mean = (prod(recall))^(1/mclass);
-end
+    function fMeasure = calculate_f_measure(label, predictedLabel, nClass)
+        fMeasure = zeros(1, nClass);
+        for iClass = 1:nClass
+            fMeasure(iClass) = 2*label(:, iClass)'*predictedLabel(:, iClass)/(sum(predictedLabel(:, iClass)) + sum(label(:, iClass)));
+        end
+        fMeasure(isnan(fMeasure)) = 1;
+    end
 
-function f_measure = compute_f_measure(F, H, mclass)
-f_measure = zeros(1, mclass);
-for c = 1:mclass
-    f_measure(c) = 2*F(:, c)'*H(:, c)/(sum(H(:, c)) + sum(F(:, c)));
-end
-f_measure(isnan(f_measure)) = 1;
-end
+    function precision = calculate_precision(label, predictedLabel, nClass)
+        precision = zeros(1, nClass);
+        for iClass = 1:nClass
+            precision(iClass) = label(:, iClass)'*predictedLabel(:, iClass)/sum(predictedLabel(:, iClass));
+        end
+        precision(isnan(precision)) = 1;
+    end
 
-function precision = compute_precision(F, H, mclass)
-precision = zeros(1, mclass);
-for c = 1:mclass
-    precision(c) = F(:, c)'*H(:, c)/sum(H(:, c));
-end
-precision(isnan(precision)) = 1;
-end
+    function recall = calculate_recall(label, predictedLabel, nClass)
+        recall = zeros(1, nClass);
+        for iClass = 1:nClass
+            recall(iClass) = label(:, iClass)'*predictedLabel(:, iClass)/sum(label(:, iClass));
+        end
+        recall(isnan(recall)) = 1;
+    end
 
-function recall = compute_recall(F, H, mclass)
-recall = zeros(1, mclass);
-for c = 1:mclass
-    recall(c) = F(:, c)'*H(:, c)/sum(F(:, c));
-end
-recall(isnan(recall)) = 1;
-end
-
-function y = index2vector(x, mclass)
-y = zeros(numel(x), mclass);
-for n = 1:numel(x)
-    y(n, x(n)) = 1;
-end
+    function output = index2vector(input, nClass)
+        output = zeros(numel(input), nClass);
+        for iData = 1:numel(input)
+            output(iData, input(iData)) = 1;
+        end
+    end
 end
