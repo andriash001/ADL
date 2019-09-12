@@ -895,6 +895,8 @@ end
 end
 
 %% Performance measure
+% This function is developed from Gregory Ditzler
+% https://github.com/gditzler/IncrementalLearning/blob/master/src/stats.m
 function [fMeasure,gMean,recall,precision,error] = performanceMeasure(trueClass, rawOutput, nClass)
 label           = index2vector(trueClass, nClass);
 predictedLabel  = index2vector(rawOutput, nClass);
