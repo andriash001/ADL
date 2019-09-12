@@ -21,9 +21,10 @@
 % SOFTWARE.
 
 %% main code
-function [parameter,performance] = ADL(data,I,chunkSize,epoch,dataProportion,alpha_w,alpha_d,...
+function [parameter,performance] = ADL(data,I,chunkSize,epoch,alpha_w,alpha_d,...
     delta)
 %% divide the data into nFolds chunks
+dataProportion = 1;     % portion of labeled samples
 fprintf('=========Parallel Autonomous Deep Learning is started=========\n')
 [nData,mn] = size(data);
 % data_original = data;
