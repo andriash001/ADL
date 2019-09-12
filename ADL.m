@@ -20,6 +20,22 @@
 % OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 % SOFTWARE.
 
+%% list of equation (refer to the paper):
+% equation 4.1 is implemented in the line 398
+% equation 4.4 is implemented in the line 519
+% equation 4.5 is implemented in the line 520
+% equation 4.6 is implemented in the line 520
+% equation 4.7 is implemented in the line 578
+% equation 4.8 is implemented in the line 628
+% equation 4.9 is implemented in the line 220 - 235
+% equation 4.10 is implemented in the line 231, 232
+% equation 4.11 is implemented in the line 237
+% equation 4.12 is implemented in the line 298
+% equation 4.13 is implemented in the line 174
+% equation 4.14 is implemented in the line 408, 411
+% equation 4.15 is implemented in the line 412
+% equation 4.16 is implemented in the line 409
+
 %% main code
 function [parameter,performance] = ADL(data,I,chunkSize,epoch,alpha_w,alpha_d,...
     delta)
@@ -27,7 +43,6 @@ function [parameter,performance] = ADL(data,I,chunkSize,epoch,alpha_w,alpha_d,..
 dataProportion = 1;     % portion of labeled samples, 0-1
 fprintf('=========Autonomous Deep Learning is started=========\n')
 [nData,mn] = size(data);
-% data_original = data;
 M = mn - I;
 l = 0;
 nFolds       = round(size(data,1)/chunkSize);                 % number of data chunk
@@ -88,7 +103,7 @@ parameter.ev{1}.stdmin_NS   = [];
 parameter.ev{1}.stdmin_NHS  = [];
 
 %% initiate drift detection parameter
-alpha   = alpha_d;
+alpha = alpha_d;
 
 %% initiate layer merging iterative parameters
 for k3=1:M
@@ -115,7 +130,7 @@ for iFolds = 1:nFolds
     parameter.net.t = iFolds;
     [parameter.net] = testing(parameter.net,x,T,parameter.ev);
     
-    %% metrics calculation
+    % metrics calculation
     parameter.Loss(iFolds) = parameter.net.loss(parameter.net.index);
     tTest(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.sigma;
     acttualLabel(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.acttualLabel;
@@ -123,7 +138,7 @@ for iFolds = 1:nFolds
     parameter.residual_error(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.residual_error;
     parameter.cr(iFolds) = parameter.net.cr;
     
-    %% statistical measure
+    % performance measure
     [performance.ev.f_measure(iFolds,:),performance.ev.g_mean(iFolds,:),performance.ev.recall(iFolds,:),performance.ev.precision(iFolds,:),performance.ev.err(iFolds,:)] = performanceMeasure(parameter.net.acttualLabel, parameter.net.classPerdiction, M);
     if iFolds == nFolds
         fprintf('=========Parallel Autonomous Deep Learning is finished=========\n')
@@ -131,16 +146,16 @@ for iFolds = 1:nFolds
     end
     parameter.net.test_time(iFolds) = toc(start_test);
     
-    %% Layer merging mechanism
+    %% Layer pruning mechanism
     start_train = tic;
-    outputcovar = zeros(layer,layer,M);
+    outputCovar = zeros(layer,layer,M);
     for iter = 1:layer
         for iter1 = 1:layer
             if parameter.net.beta(iter) ~= 0 && parameter.net.beta(iter1) ~= 0
                 for iter2 = 1:M
                     temporary = cov(parameter.net.activityOutput{iter1}(:,iter2),parameter.net.activityOutput{iter}(:,iter2));
-                    outputcovar(iter,iter1,iter2) = temporary(1,2);
-                    covariance (iter,iter1,iter2) = (covariance_old(iter,iter1,iter2)*(iFolds - 1) + (((iFolds - 1)/iFolds)*outputcovar(iter,iter1,iter2)))/iFolds;
+                    outputCovar(iter,iter1,iter2) = temporary(1,2);
+                    covariance (iter,iter1,iter2) = (covariance_old(iter,iter1,iter2)*(iFolds - 1) + (((iFolds - 1)/iFolds)*outputCovar(iter,iter1,iter2)))/iFolds;
                 end
             end
         end
@@ -156,7 +171,7 @@ for iFolds = 1:nFolds
                         pearson = covariance(end - l,hh,o)/sqrt(covariance(end - l,end - l,o)*covariance(hh,hh,o));
                         MCI(o)  = (0.5*(covariance(hh,hh,o) + covariance(end - l,end - l,o)) - sqrt((covariance(hh,hh,o) + covariance(end - l,end - l,o))^(2) - 4*covariance(end - l,end - l,o)*covariance(hh,hh,o)*(1 - pearson^(2))));
                     end
-                    if max(abs(MCI)) < threshold
+                    if max(abs(MCI)) < threshold    % equation 4.13
                         if isempty(merged_list)
                             merged_list(1,1) = layer - l;
                             merged_list(1,2) = hh;
@@ -178,13 +193,11 @@ for iFolds = 1:nFolds
             noOfHighlyCorrelated = find(merged_list(i,:) == 0, 1);
             if isempty(noOfHighlyCorrelated)
                 if parameter.net.beta(merged_list(i,1)) > parameter.net.beta(merged_list(i,2))
-                    a = merged_list(i,1);
-                    b = merged_list(i,2);
+                    deleteLayer = merged_list(i,2);
                 else
-                    b = merged_list(i,1);
-                    a = merged_list(i,2);
+                    deleteLayer = merged_list(i,1);
                 end
-                del_list = [del_list b];
+                del_list = [del_list deleteLayer];
             end
         end
         if isempty(del_list) == false && parameter.net.beta(del_list) ~= 0
@@ -198,13 +211,14 @@ for iFolds = 1:nFolds
     %% Drift detection: output space
     if iFolds > 1
         cuttingpoint = 0;
-        pp    = length(T);
-        F_cut = zeros(pp,1);
+        pp    = length(T);                      % batch size
+        F_cut = zeros(pp,1);                    % initiate accuracy matrix F
         F_cut(parameter.net.wrongClass,:) = 1;
         [Fupper,~] = max(F_cut);
         [Flower,~] = min(F_cut);
         miu_F = mean(F_cut);
         for cut = 1:pp
+            % finding the cutting point, following equation 4.9
             miu_G = mean(F_cut(1:cut,:));
             [Gupper,~] = max(F_cut(1:cut,:));
             [Glower,~] = min(F_cut(1:cut,:));
@@ -213,17 +227,14 @@ for iFolds = 1:nFolds
             if (epsilon_G + miu_G) >= (miu_F + epsilon_F)
                 cuttingpoint = cut;
                 miu_H = mean(F_cut(cuttingpoint+1:end,:));
+                % calculate the epsilon W and epsilon D using equation 4.10
                 epsilon_D = (Fupper-Flower)*sqrt(((pp-cuttingpoint)/(2*cuttingpoint*(pp-cuttingpoint)))*log(1/alpha_d));
                 epsilon_W = (Fupper-Flower)*sqrt(((pp-cuttingpoint)/(2*cuttingpoint*(pp-cuttingpoint)))*log(1/alpha_w));
                 break
             end
         end
-        if cuttingpoint == 0
-            miu_H = miu_F;
-            epsilon_D = (Fupper - Flower)*sqrt(((pp)/(2*cut*(pp))*log(1/alpha_d)));
-            epsilon_W = (Fupper - Flower)*sqrt(((pp)/(2*cut*(pp))*log(1/alpha_w)));
-        end
         if abs(miu_G - miu_H) > epsilon_D && cuttingpoint > 1 && cuttingpoint < pp
+            % abs(miu_G - miu_H) > epsilon_D is the equation 4.11
             st = 1;
             disp('Drift state: DRIFT');
             layer                      = layer + 1;
@@ -232,23 +243,23 @@ for iFolds = 1:nFolds
             parameter.net.index        = parameter.net.nHiddenLayer;
             fprintf('The new Layer no %d is FORMED around chunk %d\n', layer, iFolds)
             
-            %% initiate NN weight parameters
+            % initiate NN weight parameters
             [ii,~] = size(parameter.net.weight{layer-1});
             parameter.net.weight {layer}  = normrnd(0,sqrt(2/(ii+1)),[1,ii+1]);
             parameter.net.velocity{layer} = zeros(1,ii+1);
             parameter.net.grad{layer}     = zeros(1,ii+1);
             
-            %% initiate new classifier weight
+            % initiate new classifier weight
             parameter.net.weightSoftmax {layer}  = normrnd(0,1,[M,2]);
             parameter.net.momentumSoftmax{layer} = zeros(M,2);
             parameter.net.gradSoftmax{layer}     = zeros(M,2);
             
-            %% initiate new voting weight
+            % initiate new voting weight
             parameter.net.beta(layer)    = 1;
             parameter.net.betaOld(layer) = 1;
             parameter.net.p(layer)       = 1;
             
-            %% initiate iterative parameters
+            % initiate iterative parameters
             parameter.ev{layer}.layer       = layer;
             parameter.ev{layer}.kl          = 0;
             parameter.ev{layer}.K           = 1;
@@ -265,43 +276,45 @@ for iFolds = 1:nFolds
             parameter.ev{layer}.BIAS2       = [];
             parameter.ev{layer}.VAR         = [];
             
-            %% initiate covariance for rule merging
-            for k3=1:M
+            % initiate covariance for rule merging
+            for k3=1:M        
                 covariance(layer,:,k3) = 0;
                 covariance(:,layer,k3) = 0;
             end
             covariance_old = covariance;
             
-            %% check buffer
-            if isempty(buffer_x)
+            if isempty(buffer_x)    % check buffer
             else
-                x = [parameter.net.activity{1}(:,2:end);buffer_x]; % input for discriminative training
+                % prepare input for training
+                x = [parameter.net.activity{1}(:,2:end);buffer_x]; 
                 T = [T;buffer_T];
                 parameter.net.T = T;
                 parameter.net = netFeedForward(parameter.net, x, T);
             end
-            buffer_x = [];
-            buffer_T = [];
+            
+            buffer_x = []; % clear the buffer of input
+            buffer_T = []; % clear the buffer of output
         elseif abs(miu_G - miu_H) >= epsilon_W && abs(miu_G - miu_H) < epsilon_D && st ~= 2
+            % abs(miu_G - miu_H) >= epsilon_W && abs(miu_G - miu_H) < epsilon_D is the equation 4.12
             disp('Drift state: WARNING');
             st       = 2;
-            buffer_x = x;
-            buffer_T = T;
+            
+            buffer_x = x; % save current data batch to buffer of input
+            buffer_T = T; % save current data batch to buffer of output
         else
             st = 3;
             disp('Drift state: STABLE');
             
-            %% check buffer
-            if isempty(buffer_x)
-                
+            if isempty(buffer_x)    % check buffer
             else
-                x  = [buffer_x;x];
-                T  = [buffer_T;T];
+                x  = [buffer_x;x];  % add data buffer to training data
+                T  = [buffer_T;T];  % add data buffer to training data
                 parameter.net.T = T;
                 parameter.net   = netFeedForward(parameter.net, x, T);
             end
-            buffer_x = [];
-            buffer_T = [];
+            
+            buffer_x = []; % clear the buffer of input
+            buffer_T = []; % clear the buffer of output
         end
     else
         st = 3;
@@ -309,34 +322,33 @@ for iFolds = 1:nFolds
         buffer_x = [];
         buffer_T = [];
     end
-    drift(iFolds) = st;
-    HL(iFolds) = numel(find(parameter.net.beta ~= 0));
+    driftState(iFolds) = st;
+    nHidLayer(iFolds) = numel(find(parameter.net.beta ~= 0));
     parameter.wl(iFolds) = parameter.net.index;
     
-    %% Discrinimanive training for winning layer
+    %% training for winning layer
     if st ~= 2
-        %         disp('Discriminative Training: running ...');
         parameter = training(parameter,T,epoch,dataProportion);
-        %         disp('Discriminative Training: ... finished');
+        fprintf('=========Hidden layer number %d was updated=========\n', parameter.net.index)
     end
     parameter.net.update_time(iFolds) = toc(start_train);
     
     %% clear current chunk data
     clear Data{t}
     parameter.net.activity = {};
-    fprintf('=========Hidden layer number %d was updated=========\n', parameter.net.index)
+    
 end
 
 %% statistical measure
 [performance.f_measure,performance.g_mean,performance.recall,performance.precision,performance.err] = performanceMeasure(acttualLabel, classPerdiction, M);
 
 %% save the numerical result
-parameter.drift         = drift;
+parameter.drift         = driftState;
 parameter.nFolds        = nFolds;
 performance.update_time = [mean(parameter.net.update_time) std(parameter.net.update_time)];
 performance.test_time   = [mean(parameter.net.test_time) std(parameter.net.test_time)];
 performance.classification_rate = [mean(parameter.cr(2:end)) std(parameter.cr(2:end))];
-performance.layer               = [mean(HL) std(HL)];
+performance.layer               = [mean(nHidLayer) std(nHidLayer)];
 performance.LayerWeight         = parameter.net.beta;
 meanode                         = [];
 stdnode                         = [];
@@ -349,7 +361,7 @@ end
 performance.meanode = meanode;
 performance.stdnode = stdnode;
 performance.NumberOfParameters = parameter.net.mnop;
-parameter.HL = HL;
+parameter.HL = nHidLayer;
 
 %% plot the result
 subplot(3,1,1)
@@ -363,7 +375,7 @@ ylim([0 1.1]);
 xlim([1 nFolds]);
 ylabel('Loss')
 subplot(3,1,3)
-plot(HL)
+plot(nHidLayer)
 ylabel('No of hidden layer')
 xlim([1 nFolds]);
 xlabel('chunk');
@@ -371,7 +383,72 @@ hold off
 fprintf('=========Autonomous Deep Learning is finished=========\n')
 end
 
-%% train the winning layer
+%% testing phase of ADL
+function [net] = testing(net, input, trueClass, ev)
+%% feedforward
+net              = netFeedForward(net, input, trueClass);
+[nData,m2]       = size(trueClass);
+decreasingFactor = 0.001;
+
+%% obtain acttual Label
+[~,acttualLabel] = max(trueClass,[],2);
+net.sigma = zeros(nData,m2);
+for iData = 1 : nData
+    for iHiddenLayer = 1 : net.nHiddenLayer
+        if net.beta(iHiddenLayer) ~= 0
+            %% obtain the predicted label, according equation 4.1
+            % note that the layer weight betaOld is fixed, obtained from
+            % the previous batch
+            net.sigma(iData,:) = net.sigma(iData,:) + net.activityOutput{iHiddenLayer}(iData,:)*net.betaOld(iHiddenLayer);
+            [~, net.classlabel{iHiddenLayer}(iData,:)] = max(net.activityOutput{iHiddenLayer}(iData,:),[],2);
+            
+            %% train the dynamic voting weight beta
+            compare = acttualLabel(iData,:) - net.classlabel{iHiddenLayer}(iData,:);
+            if compare ~= 0
+                net.p(iHiddenLayer)    = max(net.p(iHiddenLayer)-decreasingFactor,decreasingFactor);        % wrong prediction decrease p, equation 4.14
+                net.beta(iHiddenLayer) = max(net.beta(iHiddenLayer)*net.p(iHiddenLayer),decreasingFactor);  % penalty, equation 4.16
+            elseif compare == 0
+                net.p(iHiddenLayer)    = min(net.p(iHiddenLayer)+decreasingFactor,1);                       % correct prediction increase p, equation 4.14
+                net.beta(iHiddenLayer) = min(net.beta(iHiddenLayer)*(1+net.p(iHiddenLayer)),1);             % reward, equation 4.15
+            end
+        end
+        
+        if iData == nData
+            %% calculate the number of parameter
+            if net.beta(iHiddenLayer) ~= 0
+                [c,d] = size(net.weightSoftmax{iHiddenLayer});
+                vw = 1;
+            else
+                c = 0;
+                d = 0;
+                vw = 0;
+            end
+            [a,b] = size(net.weight{iHiddenLayer});
+            nop(iHiddenLayer) = a*b + c*d + vw;     % no of parameters
+            
+            %% calculate the number of node in each hidden layer
+            net.nodes{iHiddenLayer}(net.t) = ev{iHiddenLayer}.K;
+        end
+    end
+end
+net.nop(net.t) = sum(nop);
+net.mnop       = [mean(net.nop) std(net.nop)];
+
+%% update the voting weight
+net.beta      = net.beta/sum(net.beta);
+net.betaOld   = net.beta;
+[~,net.index] = max(net.beta);
+
+%% calculate classification rate
+[multiClassProb,classPerdiction] = max(net.sigma,[],2);
+net.wrongClass      = find(classPerdiction ~= acttualLabel);
+net.cr              = 1 - numel(net.wrongClass)/nData;
+net.residual_error  = 1 - multiClassProb;
+net.classPerdiction = classPerdiction;
+net.acttualLabel    = acttualLabel;
+end
+
+%% train the winning layer ADL
 function parameter  = training(parameter,y,nEpoch,dataProportion)
 [~,bb] = size(parameter.net.weight{parameter.net.index});
 grow   = 0;
@@ -385,8 +462,8 @@ var_x_old   = parameter.ev{1}.var_x_old;
 kl          = parameter.ev{ly}.kl;
 K           = parameter.ev{ly}.K;
 node        = parameter.ev{ly}.node;
-BIAS2       = parameter.ev{ly}.BIAS2;
-VAR         = parameter.ev{ly}.VAR;
+growingThreshold = parameter.ev{ly}.BIAS2;
+pruningThreshold = parameter.ev{ly}.VAR;
 miu_NS_old  = parameter.ev{ly}.miu_NS_old;
 var_NS_old  = parameter.ev{ly}.var_NS_old;
 miu_NHS_old = parameter.ev{ly}.miu_NHS_old;
@@ -416,12 +493,12 @@ s           = RandStream('mt19937ar','Seed',0);
 kk          = randperm(s,nData);
 x           = x(kk,:);
 y           = y(kk,:);
-nLabeledData = round(dataProportion*nData);
+nLabeledData= round(dataProportion*nData);
 x           = x(1:nLabeledData,:);
 y           = y(1:nLabeledData,:);
 [nData,~]   = size(x);
 
-%% xavier initialization
+%% xavier initialization constant
 if ly > 1
     n_in = parameter.ev{ly-1}.K;
 else
@@ -433,13 +510,13 @@ for iData = 1 : nData
     kp = kp + 1;
     kl = kl + 1;
     
-    %% Incremental calculation of x_tail mean and variance
+    %% Incremental calculation of bias and variance
     [miu_x,std_x,var_x] = meanstditer(miu_x_old,var_x_old,parameter.net.activity{1}(iData,:),kp);
     miu_x_old = miu_x;
     var_x_old = var_x;
     
-    %% Expectation of z
-    py = probit(miu_x,std_x)';
+    % Expectation of output
+    py = probit(miu_x,std_x)';        % This implements equation 4.4
     for ii = 1:parameter.net.index
         if ii == parameter.net.index
             py = sigmf(net.weight{1}*py,[1,0]);
@@ -450,11 +527,13 @@ for iData = 1 : nData
         if ii == 1
             Ey2 = py.^2;
         end
-    end
+    end % this implements equation 4.5, 4.6
     Ey = py;
     Ez = net.weight{2}*Ey;
     Ez = exp(Ez - max(Ez));
-    Ez = Ez./sum(Ez);
+    Ez = Ez./sum(Ez);           % E[output]
+    
+    % expectation of output2
     if parameter.net.nHiddenLayer > 1
         py = Ey2;
         for ii = 2:parameter.net.index
@@ -469,19 +548,18 @@ for iData = 1 : nData
     end
     Ez2 = net.weight{2}*Ey2;
     Ez2 = exp(Ez2 - max(Ez2));
-    Ez2 = Ez2./sum(Ez2);
+    Ez2 = Ez2./sum(Ez2);        % E[output2]
     
     %% Network mean calculation
-    bias2 = (Ez - y(iData,:)').^2;
+    bias2 = (Ez - y(iData,:)').^2;  % bias = (E[y] - y)2
     ns    = bias2;
-    NS    = norm(ns,'fro');
+    NS    = norm(ns,'fro');         % norm operator to summarize
     
     %% Incremental calculation of NS mean and variance
     [miu_NS,std_NS,var_NS] = meanstditer(miu_NS_old,var_NS_old,NS,kl);
-    miu_NS_old = miu_NS;
+    miu_NS_old = miu_NS;            % empirical mean of bias
     var_NS_old = var_NS;
     miustd_NS  = miu_NS + std_NS;
-    miuNS(iData,:) = miu_NS;
     if kl <= 1 || grow == 1
         miumin_NS = miu_NS;
         stdmin_NS = std_NS;
@@ -493,15 +571,17 @@ for iData = 1 : nData
             stdmin_NS = std_NS;
         end
     end
-    miustdmin_NS  = miumin_NS + (1.3*exp(-NS)+0.7)*stdmin_NS;
-    BIAS2(kp,:)   = miu_NS;
+    miustdmin_NS  = miumin_NS + (1.3*exp(-NS)+0.7)*stdmin_NS; % right hand side of equation 4.7
+    growingThreshold(kp,:)   = miu_NS;     
     
-    %% growing hidden unit
+    %% growing hidden unit if equation 4.7 is satisfied
     if miustd_NS >= miustdmin_NS && kl > 1
         grow            = 1;
         K               = K + 1;
         fprintf('The new node no %d is FORMED around sample %d\n', K, kp)
         node(kp)        = K;
+        
+        % augment the weight
         net.weight{1}   = [net.weight{1};normrnd(0,sqrt(2/(n_in+1)),[1,bb])];
         net.velocity{1} = [net.velocity{1};zeros(1,bb)];
         net.grad{1}     = [net.grad{1};zeros(1,bb)];
@@ -509,6 +589,8 @@ for iData = 1 : nData
         net.velocity{2} = [net.velocity{2} zeros(parameter.net.initialConfig(end),1)];
         net.grad{2}     = [net.grad{2} zeros(parameter.net.initialConfig(end),1)];
         if ly < parameter.net.nHiddenLayer
+            % add weight to the following hidden layer, if the winning
+            % layer is not the last hidden layer
             [wNext,~]                    = size(parameter.net.weight{ly+1});
             parameter.net.weight{ly+1}   = [parameter.net.weight{ly+1} normrnd(0,sqrt(2/(K+1)),[wNext,1])];
             parameter.net.velocity{ly+1} = [parameter.net.velocity{ly+1} zeros(wNext,1)];
@@ -520,12 +602,12 @@ for iData = 1 : nData
     end
     
     %% Network variance calculation
-    var = Ez2 - Ez.^2;
+    var = Ez2 - Ez.^2;          % variance
     NHS = norm(var,'fro');
     
     %% Incremental calculation of NHS mean and variance
     [miu_NHS,std_NHS,var_NHS] = meanstditer(miu_NHS_old,var_NHS_old,NHS,kl);
-    miu_NHS_old = miu_NHS;
+    miu_NHS_old = miu_NHS;      % empirical mean of variance
     var_NHS_old = var_NHS;
     miustd_NHS  = miu_NHS + std_NHS;
     if kl <= I+1 || prune == 1
@@ -539,17 +621,19 @@ for iData = 1 : nData
             stdmin_NHS = std_NHS;
         end
     end
-    miustdmin_NHS  = miumin_NHS + (2.6*exp(-NHS)+1.4)*stdmin_NHS;
-    VAR(kp,:)      = miu_NHS;
+    miustdmin_NHS  = miumin_NHS + (2.6*exp(-NHS)+1.4)*stdmin_NHS;  % right hand side of equation 4.8
+    pruningThreshold(kp,:)      = miu_NHS;
     
-    %% pruning hidden unit
+    %% pruning hidden unit, if equation 4.8 is satisfied
     if grow == 0 && K > 1 && miustd_NHS >= miustdmin_NHS && kl > I + 1
         HS       = Ey(2:end);
-        [~,BB]   = min(HS);
+        [~,BB]   = min(HS);     % find the least contributing hidden unit
         fprintf('The node no %d is PRUNED around sample %d\n', BB, kp)
         prune    = 1;
         K        = K - 1;
         node(kp) = K;
+        
+        % delete the weight
         net.weight{1}(BB,:)   = [];
         net.velocity{1}(BB,:) = [];
         net.grad{1}(BB,:)     = [];
@@ -557,6 +641,8 @@ for iData = 1 : nData
         net.velocity{2}(:,BB+1) = [];
         net.grad{2}(:,BB+1)     = [];
         if ly < parameter.net.nHiddenLayer
+            % remove weight to the following hidden layer, if the winning
+            % layer is not the last hidden layer
             parameter.net.weight{ly+1}(:,BB+1)   = [];
             parameter.net.velocity{ly+1}(:,BB+1) = [];
             parameter.net.grad{ly+1}(:,BB+1)     = [];
@@ -584,7 +670,7 @@ if nEpoch > 1
             %% feedforward
             net = netFeedForwardWinner(net, x(iData,:), y(iData,:));
             
-            %% feedforward #2, executed if there is a hidden node changing
+            %% optimize the parameters
             net = lossBackward(net);
             net = optimizerStep(net);
         end
@@ -608,8 +694,8 @@ parameter.ev{1}.var_x_old    = var_x_old;
 parameter.ev{ly}.kl          = kl;
 parameter.ev{ly}.K           = K;
 parameter.ev{ly}.node        = node;
-parameter.ev{ly}.BIAS2       = BIAS2;
-parameter.ev{ly}.VAR         = VAR;
+parameter.ev{ly}.BIAS2       = growingThreshold;
+parameter.ev{ly}.VAR         = pruningThreshold;
 parameter.ev{ly}.miu_NS_old  = miu_NS_old;
 parameter.ev{ly}.var_NS_old  = var_NS_old;
 parameter.ev{ly}.miu_NHS_old = miu_NHS_old;
@@ -622,10 +708,10 @@ end
 
 %% feedforward operation
 function net = netFeedForward(net, x, output)
-nLayer = net.nLayer;
+nLayer    = net.nLayer;
 batchSize = size(x,1);
-x = [ones(batchSize,1) x];  % by adding 1 to the first coulomn, it means the first coulomn of weight is bias
-net.activity{1} = x;        % the first activity is the input itself
+x         = [ones(batchSize,1) x];  % by adding 1 to the first coulomn, it means the first coulomn of weight is bias
+net.activity{1} = x;                % the first activity is the input itself
 
 %% feedforward from input layer through all the hidden layer
 for iLayer = 2 : nLayer-1
@@ -664,70 +750,6 @@ for iLayer = 1 : net.nHiddenLayer
         end
     end
 end
-end
-
-%% testing phase
-function [net] = testing(net, input, trueClass, ev)
-%% feedforward
-net         = netFeedForward(net, input, trueClass);
-[nData,m2]  = size(trueClass);
-factor      = 0.001;
-
-%% obtain trueclass label
-[~,acttualLabel] = max(trueClass,[],2);
-net.sigma = zeros(nData,m2);
-for iData = 1 : nData
-    for iHiddenLayer = 1 : net.nHiddenLayer
-        if net.beta(iHiddenLayer) ~= 0
-            %% obtain the predicted label
-            % note that the layer weight betaOld is fixed
-            net.sigma(iData,:) = net.sigma(iData,:) + net.activityOutput{iHiddenLayer}(iData,:)*net.betaOld(iHiddenLayer);
-            [~, net.classlabel{iHiddenLayer}(iData,:)] = max(net.activityOutput{iHiddenLayer}(iData,:),[],2);
-            compare = acttualLabel(iData,:) - net.classlabel{iHiddenLayer}(iData,:);
-            
-            %% train the weighted voting
-            if compare ~= 0
-                net.p(iHiddenLayer) = max(net.p(iHiddenLayer)-factor,factor);
-                net.beta(iHiddenLayer) = max(net.beta(iHiddenLayer)*net.p(iHiddenLayer),factor);
-            elseif compare == 0
-                net.p(iHiddenLayer) = min(net.p(iHiddenLayer)+factor,1);
-                net.beta(iHiddenLayer) = min(net.beta(iHiddenLayer)*(1+net.p(iHiddenLayer)),1);
-            end
-        end
-        
-        if iData == nData
-            %% calculate the number of parameter
-            if net.beta(iHiddenLayer) ~= 0
-                [c,d] = size(net.weightSoftmax{iHiddenLayer});
-                vw = 1;
-            else
-                c = 0;
-                d = 0;
-                vw = 0;
-            end
-            [a,b] = size(net.weight{iHiddenLayer});
-            nop(iHiddenLayer) = a*b + c*d + vw;
-            
-            %% calculate the number of node in each hidden layer
-            net.nodes{iHiddenLayer}(net.t) = ev{iHiddenLayer}.K;
-        end
-    end
-end
-net.nop(net.t) = sum(nop);
-net.mnop       = [mean(net.nop) std(net.nop)];
-
-%% update the voting weight
-net.beta      = net.beta/sum(net.beta);
-net.betaOld   = net.beta;
-[~,net.index] = max(net.beta);
-
-%% calculate classification rate
-[multiClassProb,classPerdiction] = max(net.sigma,[],2);
-net.wrongClass      = find(classPerdiction ~= acttualLabel);
-net.cr              = 1 - numel(net.wrongClass)/nData;
-net.residual_error  = 1 - multiClassProb;
-net.classPerdiction = classPerdiction;
-net.acttualLabel    = acttualLabel;
 end
 
 %% initiate neural network
@@ -782,7 +804,7 @@ end
 function net = netInitWinner(layer)
 net.initialConfig   = layer;                    %  winning layer
 net.nLayer          = numel(net.initialConfig); %  Number of layer
-net.learningRate    = 0.01;  %2                 %  learning rate, smaller value is preferred
+net.learningRate    = 0.01;                     %  learning rate, smaller value is preferred
 net.momentumCoeff   = 0.95;                     %  Momentum coefficient, higher value is preferred
 end
 
