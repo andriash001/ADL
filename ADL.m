@@ -194,14 +194,14 @@ for t = 1:nFolds
             fprintf('The Hidden Layer no %d is PRUNED around chunk %d\n', del_list, t)
             parameter.net.beta(del_list) = 0;
         end
-        parameter.prune_list = parameter.prune_list + length(del_list);
+        parameter.prune_list       = parameter.prune_list + length(del_list);
         parameter.prune_list_index = [parameter.prune_list_index del_list];
     end
     
     %% Drift detection: output space
     if t > 1
         cuttingpoint = 0;
-        pp = length(T);
+        pp    = length(T);
         F_cut = zeros(pp,1);
         F_cut(parameter.net.wrongClass,:) = 1;
         [Fupper,~] = max(F_cut);
@@ -229,22 +229,22 @@ for t = 1:nFolds
         if abs(miu_G - miu_H) > epsilon_D && cuttingpoint > 1 && cuttingpoint < pp
             st = 1;
             disp('Drift state: DRIFT');
-            layer              = layer + 1;
-            parameter.net.nLayer     = parameter.net.nLayer + 1;
-            parameter.net.nHiddenLayer    = layer;
-            parameter.net.index = parameter.net.nHiddenLayer;
+            layer                      = layer + 1;
+            parameter.net.nLayer       = parameter.net.nLayer + 1;
+            parameter.net.nHiddenLayer = layer;
+            parameter.net.index        = parameter.net.nHiddenLayer;
             fprintf('The new Layer no %d is FORMED around chunk %d\n', layer, t)
             
             %% initiate NN weight parameters
             [ii,~] = size(parameter.net.weight{layer-1});
-            parameter.net.weight {layer} = normrnd(0,sqrt(2/(ii+1)),[1,ii+1]);
+            parameter.net.weight {layer}  = normrnd(0,sqrt(2/(ii+1)),[1,ii+1]);
             parameter.net.momentum{layer} = zeros(1,ii+1);
-            parameter.net.grad{layer} = zeros(1,ii+1);
+            parameter.net.grad{layer}     = zeros(1,ii+1);
             
             %% initiate new classifier weight
-            parameter.net.weightSoftmax {layer} = normrnd(0,1,[M,2]);
+            parameter.net.weightSoftmax {layer}  = normrnd(0,1,[M,2]);
             parameter.net.momentumSoftmax{layer} = zeros(M,2);
-            parameter.net.gradSoftmax{layer} = zeros(M,2);
+            parameter.net.gradSoftmax{layer}     = zeros(M,2);
             
             %% initiate new voting weight
             parameter.net.beta(layer)    = 1;
@@ -286,8 +286,8 @@ for t = 1:nFolds
             buffer_x = [];
             buffer_T = [];
         elseif abs(miu_G - miu_H) >= epsilon_W && abs(miu_G - miu_H) < epsilon_D && st ~= 2
-            st = 2;
             disp('Drift state: WARNING');
+            st       = 2;
             buffer_x = x;
             buffer_T = T;
         else
@@ -301,7 +301,7 @@ for t = 1:nFolds
                 x  = [buffer_x;x];
                 T  = [buffer_T;T];
                 parameter.net.T = T;
-                parameter.net = netFeedForward(parameter.net, x, T);
+                parameter.net   = netFeedForward(parameter.net, x, T);
             end
             buffer_x = [];
             buffer_T = [];
@@ -334,15 +334,15 @@ end
 [performance.f_measure,performance.g_mean,performance.recall,performance.precision,performance.err] = stats(acttualLabel, classPerdiction, M);
 
 %% save the numerical result
-parameter.drift = drift;
-parameter.nFolds = nFolds;
+parameter.drift         = drift;
+parameter.nFolds        = nFolds;
 performance.update_time = [mean(parameter.net.update_time) std(parameter.net.update_time)];
-performance.test_time = [mean(parameter.net.test_time) std(parameter.net.test_time)];
+performance.test_time   = [mean(parameter.net.test_time) std(parameter.net.test_time)];
 performance.classification_rate = [mean(parameter.cr(2:end)) std(parameter.cr(2:end))];
-performance.layer = [mean(HL) std(HL)];
-performance.LayerWeight = parameter.net.beta;
-meanode = [];
-stdnode = [];
+performance.layer               = [mean(HL) std(HL)];
+performance.LayerWeight         = parameter.net.beta;
+meanode                         = [];
+stdnode                         = [];
 for i = 1:parameter.net.nHiddenLayer
     a = nnz(~parameter.net.nodes{i});
     parameter.net.nodes{i} = parameter.net.nodes{i}(a+1:t);
@@ -376,9 +376,9 @@ end
 %% testing phase
 function [net] = testing(net, x, T, ev)
 %% feedforward
-net = netFeedForward(net, x, T);
+net     = netFeedForward(net, x, T);
 [m1,m2] = size(T);
-factor = 0.001;
+factor  = 0.001;
 
 %% obtain trueclass label
 [~,acttualLabel] = max(T,[],2);
@@ -421,20 +421,20 @@ for t = 1 : m1
     end
 end
 net.nop(net.t) = sum(nop);
-net.mnop = [mean(net.nop) std(net.nop)];
+net.mnop       = [mean(net.nop) std(net.nop)];
 
 %% update the voting weight
-net.beta = net.beta/sum(net.beta);
-net.betaOld = net.beta;
+net.beta      = net.beta/sum(net.beta);
+net.betaOld   = net.beta;
 [~,net.index] = max(net.beta);
 
 %% calculate classification rate
 [multiClassProb,classPerdiction] = max(net.sigma,[],2);
-net.wrongClass = find(classPerdiction ~= acttualLabel);
-net.cr = 1 - numel(net.wrongClass)/m1;
-net.residual_error = 1 - multiClassProb;
+net.wrongClass      = find(classPerdiction ~= acttualLabel);
+net.cr              = 1 - numel(net.wrongClass)/m1;
+net.residual_error  = 1 - multiClassProb;
 net.classPerdiction = classPerdiction;
-net.acttualLabel = acttualLabel;
+net.acttualLabel    = acttualLabel;
 end
 
 %% train the winning layer
@@ -463,29 +463,29 @@ stdmin_NS   = parameter.ev{ly}.stdmin_NS;
 stdmin_NHS  = parameter.ev{ly}.stdmin_NHS;
 
 %% initiate training model
-net = netInitWinner([1 1 1]);
+net                    = netInitWinner([1 1 1]);
 net.activationFunction = parameter.net.activationFunction;
-net.output = parameter.net.output;
+net.output             = parameter.net.output;
 
 %% substitute the weight to be trained to training model
-net.weight{1}  = parameter.net.weight{ly};
+net.weight{1}   = parameter.net.weight{ly};
 net.momentum{1} = parameter.net.momentum{ly};
-net.grad{1} = parameter.net.grad{ly};
-net.weight{2} = parameter.net.weightSoftmax{ly};
+net.grad{1}     = parameter.net.grad{ly};
+net.weight{2}   = parameter.net.weightSoftmax{ly};
 net.momentum{2} = parameter.net.momentumSoftmax{ly};
-net.grad{2} = parameter.net.gradSoftmax{ly};
+net.grad{2}     = parameter.net.gradSoftmax{ly};
 
 %% load the data for training
 x = parameter.net.activity{ly};
-[N,I] = size(x);
-s = RandStream('mt19937ar','Seed',0);
-kk = randperm(s,N);
-x = x(kk,:);
-y = y(kk,:);
+[N,I]   = size(x);
+s       = RandStream('mt19937ar','Seed',0);
+kk      = randperm(s,N);
+x       = x(kk,:);
+y       = y(kk,:);
 nLabeledData = round(dataProportion*N);
-x = x(1:nLabeledData,:);
-y = y(1:nLabeledData,:);
-[N,~] = size(x);
+x       = x(1:nLabeledData,:);
+y       = y(1:nLabeledData,:);
+[N,~]   = size(x);
 
 %% xavier initialization
 if ly > 1
@@ -539,8 +539,8 @@ for k = 1 : N
     
     %% Network mean calculation
     bias2 = (Ez - y(k,:)').^2;
-    ns = bias2;
-    NS = norm(ns,'fro');
+    ns    = bias2;
+    NS    = norm(ns,'fro');
     
     %% Incremental calculation of NS mean and variance
     [miu_NS,std_NS,var_NS] = meanstditer(miu_NS_old,var_NS_old,NS,kl);
@@ -565,24 +565,24 @@ for k = 1 : N
     
     %% growing hidden unit
     if miustd_NS >= miustdmin_NS && kl > 1
-        grow = 1;
-        K = K + 1;
+        grow            = 1;
+        K               = K + 1;
         fprintf('The new node no %d is FORMED around sample %d\n', K, kp)
-        node(kp)  = K;
-        net.weight{1}  = [net.weight{1};normrnd(0,sqrt(2/(n_in+1)),[1,bb])];
+        node(kp)        = K;
+        net.weight{1}   = [net.weight{1};normrnd(0,sqrt(2/(n_in+1)),[1,bb])];
         net.momentum{1} = [net.momentum{1};zeros(1,bb)];
-        net.grad{1} = [net.grad{1};zeros(1,bb)];
-        net.weight{2}  = [net.weight{2} normrnd(0,sqrt(2/(K+1)),[parameter.net.initialConfig(end),1])];
+        net.grad{1}     = [net.grad{1};zeros(1,bb)];
+        net.weight{2}   = [net.weight{2} normrnd(0,sqrt(2/(K+1)),[parameter.net.initialConfig(end),1])];
         net.momentum{2} = [net.momentum{2} zeros(parameter.net.initialConfig(end),1)];
-        net.grad{2} = [net.grad{2} zeros(parameter.net.initialConfig(end),1)];
+        net.grad{2}     = [net.grad{2} zeros(parameter.net.initialConfig(end),1)];
         if ly < parameter.net.nHiddenLayer
-            [wNext,~]             = size(parameter.net.weight{ly+1});
-            parameter.net.weight{ly+1}  = [parameter.net.weight{ly+1} normrnd(0,sqrt(2/(K+1)),[wNext,1])];
+            [wNext,~]                    = size(parameter.net.weight{ly+1});
+            parameter.net.weight{ly+1}   = [parameter.net.weight{ly+1} normrnd(0,sqrt(2/(K+1)),[wNext,1])];
             parameter.net.momentum{ly+1} = [parameter.net.momentum{ly+1} zeros(wNext,1)];
-            parameter.net.grad{ly+1} = [parameter.net.grad{ly+1} zeros(wNext,1)];
+            parameter.net.grad{ly+1}     = [parameter.net.grad{ly+1} zeros(wNext,1)];
         end
     else
-        grow = 0;
+        grow     = 0;
         node(kp) = K;
     end
     
@@ -612,22 +612,22 @@ for k = 1 : N
     
     %% pruning hidden unit
     if grow == 0 && K > 1 && miustd_NHS >= miustdmin_NHS && kl > I + 1
-        HS = Ey(2:end);
-        [~,BB] = min(HS);
+        HS       = Ey(2:end);
+        [~,BB]   = min(HS);
         fprintf('The node no %d is PRUNED around sample %d\n', BB, kp)
-        prune = 1;
-        K = K - 1;
+        prune    = 1;
+        K        = K - 1;
         node(kp) = K;
-        net.weight{1}(BB,:)  = [];
+        net.weight{1}(BB,:)   = [];
         net.momentum{1}(BB,:) = [];
-        net.grad{1}(BB,:) = [];
-        net.weight{2}(:,BB+1)  = [];
+        net.grad{1}(BB,:)     = [];
+        net.weight{2}(:,BB+1)   = [];
         net.momentum{2}(:,BB+1) = [];
-        net.grad{2}(:,BB+1) = [];
+        net.grad{2}(:,BB+1)     = [];
         if ly < parameter.net.nHiddenLayer
-            parameter.net.weight{ly+1}(:,BB+1)  = [];
+            parameter.net.weight{ly+1}(:,BB+1)   = [];
             parameter.net.momentum{ly+1}(:,BB+1) = [];
-            parameter.net.grad{ly+1}(:,BB+1) = [];
+            parameter.net.grad{ly+1}(:,BB+1)     = [];
         end
     else
         node(kp) = K;
@@ -720,26 +720,26 @@ net.output               = 'softmax';        %  output layer can be selected as 
 
 %% initiate weights and weight momentumCoeff for hidden layer
 for i = 2 : net.nLayer - 1
-    net.weight {i - 1} = normrnd(0,sqrt(2/(net.initialConfig(i-1)+1)),[net.initialConfig(i),net.initialConfig(i - 1)+1]);
+    net.weight {i - 1}  = normrnd(0,sqrt(2/(net.initialConfig(i-1)+1)),[net.initialConfig(i),net.initialConfig(i - 1)+1]);
     net.momentum{i - 1} = zeros(size(net.weight{i - 1}));
-    net.grad{i - 1} = zeros(size(net.weight{i - 1}));
-    net.c{i - 1}  = normrnd(0,sqrt(2/(net.initialConfig(i-1)+1)),[net.initialConfig(i - 1),1]);
+    net.grad{i - 1}     = zeros(size(net.weight{i - 1}));
+    net.c{i - 1}        = normrnd(0,sqrt(2/(net.initialConfig(i-1)+1)),[net.initialConfig(i - 1),1]);
 end
 
 %% initiate weights and weight momentumCoeff for output layer
 for i = 1 : net.nHiddenLayer
-    net.weightSoftmax {i} = normrnd(0,sqrt(2/(size(net.weight{i},1)+1)),[net.initialConfig(end),net.initialConfig(i+1)+1]);
-    net.momentumSoftmax{i} = zeros(size(net.weightSoftmax{i}));
-    net.gradSoftmax{i} = zeros(size(net.weightSoftmax{i}));
-    net.beta(i) = 1;
-    net.betaOld(i) = 1;
-    net.p(i) = 1;
+    net.weightSoftmax {i}   = normrnd(0,sqrt(2/(size(net.weight{i},1)+1)),[net.initialConfig(end),net.initialConfig(i+1)+1]);
+    net.momentumSoftmax{i}  = zeros(size(net.weightSoftmax{i}));
+    net.gradSoftmax{i}      = zeros(size(net.weightSoftmax{i}));
+    net.beta(i)             = 1;
+    net.betaOld(i)          = 1;
+    net.p(i)                = 1;
 end
 end
 
 function net = netInitWinner(layer)
-net.initialConfig = layer;                                  %  winning layer
-net.nLayer = numel(net.initialConfig);                        %  Number of layer
+net.initialConfig   = layer;                         %  winning layer
+net.nLayer          = numel(net.initialConfig);      %  Number of layer
 net.learningRate                     = 0.01;  %2     %  learning rate, smaller value is preferred
 net.momentumCoeff                    = 0.95;         %  Momentum coefficient, higher value is preferred
 end
@@ -870,7 +870,7 @@ for iLayer = 1 : (net.nLayer - 1)
     grad = net.grad{iLayer};
     grad = net.learningRate * grad;
     net.momentum{iLayer} = net.momentumCoeff*net.momentum{iLayer} + grad;
-    grad = net.momentum{iLayer};
+    grad                 = net.momentum{iLayer};
     
     %% apply the gradient to the weight
     net.weight{iLayer} = net.weight{iLayer} - grad;
