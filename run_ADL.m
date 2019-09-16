@@ -24,11 +24,17 @@ clc
 clear
 close all
 
-% Available in this folder
+%% load file
+% datasets are available in this link: https://bit.ly/2lOk0uc
 % load weather ; I = 8;
 % load electricitypricing; I = 8;
-load sea; I = 3;
+% load sea; I = 3;
 % load hyperplane; I = 4;
+% load susy; I = 18;
+% load Hepmass; I = 28;
+% load rlcps; I = 9;
+% load permutedmnist; I = 784;
+% load kddcup; I = 41;
 
 %% run stacked autonomous deep learning
 chunkSize = 500;        % no of data in a batch
