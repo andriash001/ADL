@@ -496,7 +496,6 @@ net.grad{2}     = parameter.net.gradSoftmax{ly};
 %% load the data for training
 x = parameter.net.activity{ly};
 [nData,I]   = size(x);
-s           = RandStream('mt19937ar','Seed',0);
 kk          = randperm(nData);
 x           = x(kk,:);
 y           = y(kk,:);
@@ -504,6 +503,7 @@ nLabeledData= round(dataProportion*nData);
 x           = x(1:nLabeledData,:);
 y           = y(1:nLabeledData,:);
 [nData,~]   = size(x);
+
 
 %% xavier initialization constant
 if ly > 1
