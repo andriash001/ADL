@@ -669,7 +669,7 @@ end
 
 %% iterative learning
 if nEpoch > 1
-    for iEpoch = 1:nEpoch
+    for iEpoch = 1:nEpoch-1
         kk = randperm(nData);
         x = x(kk,:);
         y = y(kk,:);
