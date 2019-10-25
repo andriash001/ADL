@@ -231,7 +231,7 @@ for iFolds = 1:nFolds
             [Glower,~] = min(F_cut(1:cut,:));
             epsilon_G  = (Gupper - Glower)*sqrt(((pp-cut)/(2*cut*(pp))*log(1/alpha)));
             epsilon_F  = (Fupper - Flower)*sqrt(((pp-cut)/(2*cut*(pp))*log(1/alpha)));
-            if (epsilon_G + miu_G) >= (miu_F + epsilon_F)
+            if (miu_F + epsilon_F) <= (epsilon_G + miu_G)
                 cuttingpoint = cut;
                 miu_H = mean(F_cut(cuttingpoint+1:end,:));
                 % calculate the epsilon W and epsilon D using equation 4.10
