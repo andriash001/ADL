@@ -77,8 +77,8 @@ else
             Data1 = data(((i-1)*chunk_size+1):i*chunk_size,:);
             Data{l} = Data1;
         end
-        foldplus = randperm(nFolds-1,1);
-        Data{nFolds} = Data{foldplus};
+        i = i + 1;
+        Data{nFolds} = data(((i-1)*chunk_size+1):end,:);
     end
 end
 buffer_x = [];buffer_T = [];tTest = [];
