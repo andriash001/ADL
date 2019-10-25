@@ -52,7 +52,7 @@ chunkSize = 500;        % no of data in a batch
 epoch = 1;              % no of epoch
 alpha_w = 0.0005;       % alpha warning
 alpha_d = 0.0001;       % alpha drift
-delta   = 0.03;         % pruning layer coefficient delta
+delta   = 0.05;         % pruning layer coefficient delta
 [parameter,performance] = ADL(data,I,chunkSize,epoch,alpha_w,alpha_d,...
     delta);
 clear data
