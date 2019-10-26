@@ -1,6 +1,6 @@
 % NANYANG TECHNOLOGICAL UNIVERSITY - NTUITIVE PTE LTD Dual License Agreement
 % Non-Commercial Use Only 
-% This NTUITIVE License Agreement, including all exhibits ("NTUITIVE-LA") is a legal agreement between you and NTUITIVE (or ìweî) located at 71 Nanyang Drive, NTU Innovation Centre, #01-109, Singapore 637722, a wholly owned subsidiary of Nanyang Technological University (ìNTUî) for the software or data identified above, which may include source code, and any associated materials, text or speech files, associated media and "online" or electronic documentation and any updates we provide in our discretion (together, the "Software"). 
+% This NTUITIVE License Agreement, including all exhibits ("NTUITIVE-LA") is a legal agreement between you and NTUITIVE (or ‚Äúwe‚Äù) located at 71 Nanyang Drive, NTU Innovation Centre, #01-109, Singapore 637722, a wholly owned subsidiary of Nanyang Technological University (‚ÄúNTU‚Äù) for the software or data identified above, which may include source code, and any associated materials, text or speech files, associated media and "online" or electronic documentation and any updates we provide in our discretion (together, the "Software"). 
 % 
 % By installing, copying, or otherwise using this Software, found at https://github.com/andriash001/ADL or https://www.researchgate.net/publication/335757711_ADL_Code_mFile, you agree to be bound by the terms of this NTUITIVE-LA.  If you do not agree, do not install copy or use the Software. The Software is protected by copyright and other intellectual property laws and is licensed, not sold.   If you wish to obtain a commercial royalty bearing license to this software please contact us at mpratama@ntu.edu.sg or andriash001@e.ntu.edu.sg.
 % 
@@ -26,7 +26,7 @@
 % 11.	That all rights not expressly granted to you in this NTUITIVE-LA are reserved.
 % 12.	That this NTUITIVE-LA shall be construed and controlled by the laws of the Republic of Singapore without regard to conflicts of law.  If any provision of this NTUITIVE-LA shall be deemed unenforceable or contrary to law, the rest of this NTUITIVE-LA shall remain in full effect and interpreted in an enforceable manner that most nearly captures the intent of the original language. 
 % 
-% Do you accept all of the terms of the preceding NTUITIVE-LA license agreement? If you accept the terms, click ìI Agree,î then ìNext.î  Otherwise click ìCancel.î
+% Do you accept all of the terms of the preceding NTUITIVE-LA license agreement? If you accept the terms, click ‚ÄúI Agree,‚Äù then ‚ÄúNext.‚Äù  Otherwise click ‚ÄúCancel.‚Äù
 % 
 % Copyright (c) NTUITIVE. All rights reserved.
 
@@ -229,10 +229,9 @@ for iFolds = 1:nFolds
             miu_G = mean(F_cut(1:cut,:));
             [Gupper,~] = max(F_cut(1:cut,:));
             [Glower,~] = min(F_cut(1:cut,:));
-            epsilon_G  = (Gupper - Glower)*sqrt(((pp-cut)/(2*cut*(pp))*log(1/alpha)));
-            epsilon_F  = (Fupper - Flower)*sqrt(((pp-cut)/(2*cut*(pp))*log(1/alpha)));
-            % find cuttingpoint
-            if (miu_F + epsilon_F) <= (epsilon_G + miu_G)
+            epsilon_G  = (Gupper - Glower)*sqrt(((pp)/(2*cut*(pp))*log(1/alpha)));
+            epsilon_F  = (Fupper - Flower)*sqrt(((pp)/(2*cut*(pp))*log(1/alpha)));
+            if (epsilon_G + miu_G) >= (miu_F + epsilon_F)
                 cuttingpoint = cut;
                 miu_H = mean(F_cut(cuttingpoint+1:end,:));
                 % calculate the epsilon W and epsilon D using equation 4.10
