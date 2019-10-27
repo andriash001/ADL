@@ -64,7 +64,11 @@ if round_nFolds == nFolds
     else
         for i=1:nFolds
             l = l+1;
-            Data1 = data(((i-1)*chunk_size+1):i*chunk_size,:);
+            if i < nFolds
+                Data1 = data(((i-1)*chunk_size+1):i*chunk_size,:);
+            elseif i == nFolds
+                Data1 = data(((i-1)*chunk_size+1):end,:);
+            end
             Data{l} = Data1;
         end
     end
