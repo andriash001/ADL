@@ -85,7 +85,7 @@ else
         Data{nFolds} = data(((i-1)*chunk_size+1):end,:);
     end
 end
-buffer_x = [];buffer_T = [];tTest = [];
+buffer_x = [];buffer_T = [];tTest = []; acttualLabel = []; classPerdiction = [];
 clear data Data1
 
 %% initiate model
@@ -140,12 +140,15 @@ for iFolds = 1:nFolds
     disp('Discriminative Testing: running ...');
     parameter.net.t = iFolds;
     [parameter.net] = testing(parameter.net,x,T,parameter.ev);
+    parameter.net.test_time(iFolds) = toc(start_test);
     
     % metrics calculation
     parameter.Loss(iFolds) = parameter.net.loss(parameter.net.index);
     tTest(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.sigma;
-    acttualLabel(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.acttualLabel;
-    classPerdiction(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.classPerdiction;
+    if iFolds > 1
+        acttualLabel    = [acttualLabel parameter.net.acttualLabel'];
+        classPerdiction = [classPerdiction parameter.net.classPerdiction'];
+    end
     parameter.residual_error(bd*iFolds+(1-bd):bd*iFolds,:) = parameter.net.residual_error;
     parameter.cr(iFolds) = parameter.net.cr;
     
@@ -155,7 +158,6 @@ for iFolds = 1:nFolds
         fprintf('=========Parallel Autonomous Deep Learning is finished=========\n')
         break               % last chunk only testing
     end
-    parameter.net.test_time(iFolds) = toc(start_test);
     
     %% Layer pruning mechanism
     start_train = tic;
