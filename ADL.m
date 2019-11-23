@@ -246,6 +246,11 @@ for iFolds = 1:nFolds
                 break
             end
         end
+        if cuttingpoint == 0
+            miu_H = 0;
+            epsilon_D = 0;
+            epsilon_W = 0;
+        end
         if abs(miu_G - miu_H) > epsilon_D && cuttingpoint > 1 && cuttingpoint < pp
             % abs(miu_G - miu_H) > epsilon_D is the equation 4.11
             st = 1;
